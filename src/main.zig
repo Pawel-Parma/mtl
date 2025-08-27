@@ -1,5 +1,7 @@
 const std = @import("std");
+
 const Tokenizer = @import("tokenizer.zig");
+const Parser = @import("parser.zig");
 const exit = @import("exit.zig").exit;
 
 
@@ -19,10 +21,7 @@ pub fn main() void {
         exit(3);
     }
 
-    const relative_path = args[1];
-    std.debug.print("{s}\n", .{relative_path});
-
-    const file = std.fs.cwd().openFile(relative_path, .{}) catch {
+    const file = std.fs.cwd().openFile(args[1], .{}) catch {
         std.debug.print("Failed to open file\n", .{});
         exit(4);
     };
@@ -39,26 +38,27 @@ pub fn main() void {
     };
     defer allocator.free(buffer);
 
-    const file_len = file.readAll(buffer) catch {
+    _ = file.readAll(buffer) catch {
         std.debug.print("Failed to read file\n", .{});
         exit(7);
     };
 
-    std.debug.print("File {d} contents:\n{s} \n", .{ file_len, buffer });
-
-    // Tokenize the file contents
     var tokenizer = Tokenizer.init(allocator, buffer);
+    defer tokenizer.deinit();
     tokenizer.tokenize() catch {
         std.debug.print("Tokenization failed\n", .{});
         exit(8);
     };
-    const tokens = tokenizer.tokens;
-    std.debug.print("Tokens: {d}\n", .{tokens.items.len});
 
-    // print tokens
-    for (tokens.items) |token| {
-        std.debug.print("Token: {d} - {d} - {d} - {s}\n", .{token.kind, token.position_start, token.position_end, buffer[token.position_start..token.position_end]});
-    }
+    var parser = Parser.init(allocator, tokenizer.tokens.items, buffer);
+    defer parser.deinit() catch {
+        std.debug.print("Parser deinitialization failed LOL\n", .{});
+        exit(9);
+    };
+    parser.parse() catch {
+        std.debug.print("Parsing failed\n", .{});
+        exit(10);
+    };
 }
 
 
