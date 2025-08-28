@@ -1,19 +1,22 @@
 const std = @import("std");
-const exit = @import("exit.zig");
+const core = @import("core.zig");
+
 
 const Token = @import("tokenizer.zig").Token;
 
+
 const Parser = @This();
 allocator: std.mem.Allocator,
+buffer: []const u8,
 tokens: []const Token,
 current: usize,
-ast: std.ArrayList(Node),
+ast: Node.List,
 
 pub const Node = struct {
     kind: Kind,
-    children: std.ArrayList(Node),
+    children: List,
     token_index: ?usize = null,
-
+    
     const Kind = enum {
         KEYWORD,
         IDENTIFIER,
@@ -22,7 +25,14 @@ pub const Node = struct {
         EXPRESSION,
         BINARY_EXPRESSION,
         UNARY_EXPRESSION,
+        BLOCK,
     };
+
+    pub const List = std.ArrayList(Node);
+
+    pub inline fn getToken(self: *const Node, tokens: []const Token) ?Token {
+        return tokens[self.token_index.?];
+    }
 };
 
 pub const Error = error{
@@ -31,9 +41,10 @@ pub const Error = error{
     OutOfMemory,
 };
 
-pub fn init(allocator: std.mem.Allocator, tokens: []const Token) Parser {
+pub fn init(allocator: std.mem.Allocator, buffer: []const u8, tokens: []const Token) Parser {
     return .{
         .allocator = allocator,
+        .buffer = buffer,
         .tokens = tokens,
         .current = 0,
         .ast = .empty,
@@ -42,41 +53,75 @@ pub fn init(allocator: std.mem.Allocator, tokens: []const Token) Parser {
 
 pub fn deinit(self: *Parser) !void {
     while (self.ast.items.len > 0) {
-        var node = &self.ast.items[self.ast.items.len - 1];
-        if (node.children.items.len != 0) {
-            for (node.children.items) |child| {
-                try self.ast.append(self.allocator, child);
-            }
-            node.children = .empty;
-        } else {
-            _ = self.ast.pop();
-            node.children.deinit(self.allocator);
+        var node = self.ast.pop().?;
+        for (node.children.items) |child| {
+            try self.ast.append(self.allocator, child);
         }
+        node.children.deinit(self.allocator);
     }
 }
 
 pub fn parse(self: *Parser) Error!void {
-    // TODO: add bounds checking
+    core.dprint("\nTokens:\n", .{});
     try self.ast.ensureTotalCapacity(self.allocator, 16);
     while (self.current < self.tokens.len) {
-        const token = self.currentToken();
-        var maybe_node: ?Node = null;
-        switch (token.kind) {
-            .CONST, .VAR => {
-                maybe_node = try self.parseDeclaration();
-            },
-            else => {
-                std.debug.print("Unexpected token kind {any}\n", .{token.kind});
-                exit.normal(201);
-            },
-        }
-        if (maybe_node) |node| {
-            try self.ast.append(self.allocator, node);
-        } else {
-            std.debug.print("Parser returned null node unexpectedly\n", .{});
-            exit.normal(202);
+        const node: Node = try self.parseNode();
+        try self.ast.append(self.allocator, node);
+    }
+}
+
+fn parseNode(self: *Parser) !Node {
+    const token = self.currentToken();
+    return switch (token.kind) {
+        .CONST, .VAR => try self.parseDeclaration(),
+        .CURLY_LEFT => try self.parseBlock(),
+        else => {
+            core.rprint("Unexpected token kind {any}\n", .{token.kind});
+            core.exit(201);
+        },
+    };
+}
+
+fn currentToken(self: *Parser) Token {
+    if (self.current < self.tokens.len) {
+        const token = self.tokens[self.current];
+        core.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, token.getName(self.buffer) });
+        return token;
+    }
+    core.rprint("Attempted to access current token out of bounds: {d} >= {d}\n", .{ self.current, self.tokens.len });
+    core.exit(203);
+}
+
+fn currentOneOf(self: *Parser, comptime kinds: anytype) Error!Token {
+    const token = self.currentToken();
+    inline for (kinds) |kind| {
+        if (token.kind == kind) {
+            return token;
         }
     }
+    core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
+    return Error.UnexpectedToken;
+}
+fn consumeToken(self: *Parser, kind: Token.Kind) Error!Token {
+    const token = self.currentToken();
+    if (token.kind != kind) {
+        core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kind, token.kind });
+        return Error.UnexpectedToken;
+    }
+    self.current += 1;
+    return token;
+}
+
+fn consumeOneOf(self: *Parser, comptime kinds: anytype) Error!Token {
+    const token = self.currentToken();
+    inline for (kinds) |kind| {
+        if (token.kind == kind) {
+            self.current += 1;
+            return token;
+        }
+    }
+    core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
+    return Error.UnexpectedToken;
 }
 
 fn parseDeclaration(self: *Parser) !Node {
@@ -116,45 +161,19 @@ fn parseDeclaration(self: *Parser) !Node {
     };
 }
 
-fn consumeToken(self: *Parser, kind: Token.Kind) Error!Token {
-    const token = self.currentToken();
-    if (token.kind != kind) {
-        std.debug.print("Expected token kind to be one of {any}, found {any}\n", .{ kind, token.kind });
-        return Error.UnexpectedToken;
+fn parseBlock(self: *Parser) Error!Node {
+    _ = try self.consumeToken(.CURLY_LEFT);
+    var statements: Node.List = try .initCapacity(self.allocator, 16);
+    while (self.currentToken().kind != .CURLY_RIGHT) {
+        const node = try self.parseNode();
+        try statements.append(self.allocator, node);
     }
-    self.current += 1;
-    return token;
-}
+    _ = try self.consumeToken(.CURLY_RIGHT);
 
-fn consumeOneOf(self: *Parser, comptime kinds: anytype) Error!Token {
-    const token = self.currentToken();
-    inline for (kinds) |kind| {
-        if (token.kind == kind) {
-            self.current += 1;
-            return token;
-        }
-    }
-    std.debug.print("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
-    return Error.UnexpectedToken;
-}
-
-fn currentToken(self: *Parser) Token {
-    if (self.current < self.tokens.len) {
-        return self.tokens[self.current];
-    }
-    std.debug.print("Attempted to access current token out of bounds: {d} >= {d}\n", .{ self.current, self.tokens.len });
-    exit.normal(203);
-}
-
-fn currentOneOf(self: *Parser, comptime kinds: anytype) Error!Token {
-    const token = self.currentToken();
-    inline for (kinds) |kind| {
-        if (token.kind == kind) {
-            return token;
-        }
-    }
-    std.debug.print("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
-    return Error.UnexpectedToken;
+    return Node{
+        .kind = .BLOCK,
+        .children = statements,
+    };
 }
 
 fn parseExpression(self: *Parser) !Node {
@@ -203,7 +222,7 @@ fn parsePrefix(self: *Parser) !Node {
             };
         },
         else => {
-            std.debug.print("Unexpected token in parsePrefix: {any}\n", .{token.kind});
+            core.rprint("Unexpected token in parsePrefix: {any}\n", .{token.kind});
             return Error.UnexpectedToken;
         },
     }
@@ -229,8 +248,8 @@ fn parseInfixOrSuffix(self: *Parser, left: Node) !Node {
     }
 }
 
-inline fn ArrayListFromTuple(self: *Parser, tuple: anytype) !std.ArrayList(Node) {
-    var list: std.ArrayList(Node) = try .initCapacity(self.allocator, tuple.len);
+inline fn ArrayListFromTuple(self: *Parser, tuple: anytype) !Node.List {
+    var list: Node.List = try .initCapacity(self.allocator, tuple.len);
     inline for (tuple) |item| {
         try list.append(self.allocator, item);
     }

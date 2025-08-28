@@ -1,5 +1,6 @@
 const std = @import("std");
-const exit = @import("exit.zig");
+const core = @import("core.zig");
+
 
 const Tokenizer = @This();
 allocator: std.mem.Allocator,
@@ -28,6 +29,8 @@ pub const Token = struct {
         COLON_EQUALS,
         SEMICOLON,
         IDENTIFIER,
+        CURLY_LEFT,
+        CURLY_RIGHT
     };
 
     pub const Precedence = enum(u8) {
@@ -51,6 +54,10 @@ pub const Token = struct {
             .PAREND_LEFT => .SUFFIX,
             else => .LOWEST,
         };
+    }
+
+    pub inline fn getName(self: *const Token, buffer: []const u8) []const u8 {
+        return buffer[self.start..self.end];
     }
 };
 
@@ -87,6 +94,8 @@ pub fn tokenize(self: *Tokenizer) std.mem.Allocator.Error!void {
             '/' => try self.slash(),
             '(' => try self.oneCharToken(.PAREND_LEFT),
             ')' => try self.oneCharToken(.PAREND_RIGHT),
+            '{' => try self.oneCharToken(.CURLY_LEFT),
+            '}' => try self.oneCharToken(.CURLY_RIGHT),
             ':' => try self.twoCharToken(.COLON, '=', .COLON_EQUALS),
             ';' => try self.oneCharToken(.SEMICOLON),
             '=' => try self.twoCharToken(.EQUALS, '=', .DOUBLE_EQALS),
@@ -172,7 +181,7 @@ fn unsupportedCharacter(self: *Tokenizer) noreturn {
         }
     }
 
-    std.debug.print("Error: line {d} - column {d}\n", .{ line_num, self.position - line_start + 1 });
-    std.debug.print("Unsupported character: {d}\n\n", .{self.input[self.position]});
-    exit.normal(101);
+    core.rprint("Error: line {d} - column {d}\n", .{ line_num, self.position - line_start + 1 });
+    core.rprint("Unsupported character: {d}\n\n", .{self.input[self.position]});
+    core.exit(101);
 }
