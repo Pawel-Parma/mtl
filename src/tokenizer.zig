@@ -1,5 +1,5 @@
 const std = @import("std");
-const exit = @import("exit.zig").exit;
+const exit = @import("exit.zig");
 
 const Tokenizer = @This();
 allocator: std.mem.Allocator,
@@ -15,7 +15,7 @@ pub const Token = struct {
     pub const Kind = enum {
         PLUS,
         MINUS,
-        TIMES,
+        STAR,
         SLASH,
         NUMBER_LITERAL,
         VAR,
@@ -29,6 +29,29 @@ pub const Token = struct {
         SEMICOLON,
         IDENTIFIER,
     };
+
+    pub const Precedence = enum(u8) {
+        LOWEST = 0,
+        ASSIGNMENT,
+        SUM,
+        PRODUCT,
+        PREFIX,
+        SUFFIX,
+
+        pub inline fn toInt(self: *const Precedence) u8 {
+            return @intFromEnum(self.*);
+        }
+    };
+
+    pub fn getPrecedence(self: *const Token) Precedence {
+        return switch (self.kind) {
+            .EQUALS, .COLON_EQUALS => .ASSIGNMENT,
+            .PLUS, .MINUS => .SUM,
+            .STAR, .SLASH => .PRODUCT,
+            .PAREND_LEFT => .SUFFIX,
+            else => .LOWEST,
+        };
+    }
 };
 
 const keyword_map = [_]struct {
@@ -52,14 +75,15 @@ pub fn deinit(self: *Tokenizer) void {
     self.tokens.deinit(self.allocator);
 }
 
-pub fn tokenize(self: *Tokenizer) !void {
+pub fn tokenize(self: *Tokenizer) std.mem.Allocator.Error!void {
+    // TODO: more flexible tokenizer, support whitespace between tokens in more places
     try self.tokens.ensureTotalCapacityPrecise(self.allocator, 16);
     while (self.position < self.input.len) {
         switch (self.input[self.position]) {
             ' ', '\r', '\n', '\t' => self.whitespace(),
             '+' => try self.oneCharToken(.PLUS),
             '-' => try self.oneCharToken(.MINUS),
-            '*' => try self.oneCharToken(.TIMES),
+            '*' => try self.oneCharToken(.STAR),
             '/' => try self.slash(),
             '(' => try self.oneCharToken(.PAREND_LEFT),
             ')' => try self.oneCharToken(.PAREND_RIGHT),
@@ -93,26 +117,18 @@ inline fn twoCharToken(self: *Tokenizer, kind_one: Token.Kind, char_two: u8, kin
 }
 
 inline fn slash(self: *Tokenizer) !void {
-    const pc = self.input[self.position + 1];
-    if (pc == '/') {
-        self.position += 2;
+    if (self.input[self.position + 1] == '/') {
         while (self.position < self.input.len and self.input[self.position] != '\n') {
             self.position += 1;
         }
+        self.position += 2;
         return;
-    } else if (pc == '*') {
-        while (self.position + 1 < self.input.len) : (self.position += 1) {
-            if (self.input[self.position] == '*' and self.input[self.position + 1] == '/') {
-                self.position += 2;
-                return;
-            }
-        }
     }
     try self.tokens.append(self.allocator, .{ .kind = .SLASH, .start = self.position, .end = self.position + 1 });
     self.position += 1;
 }
 
-fn numberLiteral(self: *Tokenizer) !void {
+inline fn numberLiteral(self: *Tokenizer) !void {
     const start = self.position;
     while (self.position < self.input.len and self.input[self.position] >= '0' and self.input[self.position] <= '9') {
         self.position += 1;
@@ -145,6 +161,18 @@ fn keywordLookup(word: []const u8) Token.Kind {
 }
 
 fn unsupportedCharacter(self: *Tokenizer) noreturn {
-    std.debug.print("Unexpected character: {d}\n", .{self.input[self.position]});
-    exit(102);
+    // TODO: make the source code utf-8 encoded as currently only the first codepoint of unsupported characters is reported
+    // TODO: add nice error messages, everywhere
+    var line_num: usize = 1;
+    var line_start: usize = 0;
+    for (self.input[0..self.position], 0..) |c, i| {
+        if (c == '\n') {
+            line_num += 1;
+            line_start = i + 1;
+        }
+    }
+
+    std.debug.print("Error: line {d} - column {d}\n", .{ line_num, self.position - line_start + 1 });
+    std.debug.print("Unsupported character: {d}\n\n", .{self.input[self.position]});
+    exit.normal(101);
 }

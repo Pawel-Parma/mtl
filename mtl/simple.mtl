@@ -1,10 +1,9 @@
 const a = 123 ;
-const b = 1;
-var c: i32 = 21;
-var d := c;
+const b = a;
+const c: i32 = 123;
+var d: i32 = 21;
+var e := c;
+var f: i32 = e;
+var g := 123;
+const g := 123;
 // asadadadsad asadadadsad
-/* 
-
-asadadadsadasd
-asadadadsad
-*/
