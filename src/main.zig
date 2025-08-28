@@ -61,7 +61,7 @@ pub fn main() void {
         std.debug.print("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, token_text });
     }
 
-    var parser = Parser.init(allocator, tokens, buffer);
+    var parser = Parser.init(allocator, tokens);
     defer parser.deinit() catch |err| {
         std.debug.print("Parser deinitialization failed, LOL: {any}\n", .{err});
         exit.normal(8);
