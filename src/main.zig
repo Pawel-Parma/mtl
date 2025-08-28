@@ -4,7 +4,6 @@ const core = @import("core.zig");
 const Tokenizer = @import("tokenizer.zig");
 const Parser = @import("parser.zig");
 const Semantic = @import("semantic.zig");
-// TODO: replace enum values to pascal case
 
 pub fn main() void {
     const allocator = std.heap.page_allocator;

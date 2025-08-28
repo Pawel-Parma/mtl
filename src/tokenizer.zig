@@ -1,7 +1,6 @@
 const std = @import("std");
 const core = @import("core.zig");
 
-
 const Tokenizer = @This();
 allocator: std.mem.Allocator,
 input: []const u8,
@@ -14,32 +13,32 @@ pub const Token = struct {
     kind: Kind,
 
     pub const Kind = enum {
-        PLUS,
-        MINUS,
-        STAR,
-        SLASH,
-        NUMBER_LITERAL,
-        VAR,
-        CONST,
-        DOUBLE_EQALS,
-        EQUALS,
-        COLON,
-        PAREND_LEFT,
-        PAREND_RIGHT,
-        COLON_EQUALS,
-        SEMICOLON,
-        IDENTIFIER,
-        CURLY_LEFT,
-        CURLY_RIGHT
+        Plus,
+        Minus,
+        Star,
+        Slash,
+        NumberLiteral,
+        Var,
+        Const,
+        DoubleEquals,
+        Equals,
+        Colon,
+        ParendLeft,
+        ParendRight,
+        ColonEquals,
+        Semicolon,
+        Identifier,
+        CurlyLeft,
+        CurlyRight,
     };
 
     pub const Precedence = enum(u8) {
-        LOWEST = 0,
-        ASSIGNMENT,
-        SUM,
-        PRODUCT,
-        PREFIX,
-        SUFFIX,
+        Lowest = 0,
+        Assignment,
+        Sum,
+        Product,
+        Prefix,
+        Suffix,
 
         pub inline fn toInt(self: *const Precedence) u8 {
             return @intFromEnum(self.*);
@@ -48,11 +47,11 @@ pub const Token = struct {
 
     pub fn getPrecedence(self: *const Token) Precedence {
         return switch (self.kind) {
-            .EQUALS, .COLON_EQUALS => .ASSIGNMENT,
-            .PLUS, .MINUS => .SUM,
-            .STAR, .SLASH => .PRODUCT,
-            .PAREND_LEFT => .SUFFIX,
-            else => .LOWEST,
+            .Equals, .ColonEquals => .Assignment,
+            .Plus, .Minus => .Sum,
+            .Star, .Slash => .Product,
+            .ParendLeft => .Suffix,
+            else => .Lowest,
         };
     }
 
@@ -61,12 +60,21 @@ pub const Token = struct {
     }
 };
 
-const keyword_map = [_]struct {
-    name: []const u8,
-    kind: Token.Kind,
-}{
-    .{ .name = "var", .kind = .VAR },
-    .{ .name = "const", .kind = .CONST },
+const KeywordMap = struct {
+    pub const entries = [_]struct {
+        name: []const u8,
+        kind: Token.Kind,
+    }{
+        .{ .name = "var", .kind = .Var },
+        .{ .name = "const", .kind = .Const },
+    };
+
+    pub fn lookup(word: []const u8) Token.Kind {
+        inline for (KeywordMap.entries) |entry| {
+            if (std.mem.eql(u8, word, entry.name)) return entry.kind;
+        }
+        return .Identifier;
+    }
 };
 
 pub fn init(allocator: std.mem.Allocator, input: []const u8) Tokenizer {
@@ -83,22 +91,21 @@ pub fn deinit(self: *Tokenizer) void {
 }
 
 pub fn tokenize(self: *Tokenizer) std.mem.Allocator.Error!void {
-    // TODO: more flexible tokenizer, support whitespace between tokens in more places
     try self.tokens.ensureTotalCapacityPrecise(self.allocator, 16);
     while (self.position < self.input.len) {
         switch (self.input[self.position]) {
-            ' ', '\r', '\n', '\t' => self.whitespace(),
-            '+' => try self.oneCharToken(.PLUS),
-            '-' => try self.oneCharToken(.MINUS),
-            '*' => try self.oneCharToken(.STAR),
+            ' ', '\t', '\r', '\n' => self.whitespace(),
+            '+' => try self.oneCharToken(.Plus),
+            '-' => try self.oneCharToken(.Minus),
+            '*' => try self.oneCharToken(.Star),
             '/' => try self.slash(),
-            '(' => try self.oneCharToken(.PAREND_LEFT),
-            ')' => try self.oneCharToken(.PAREND_RIGHT),
-            '{' => try self.oneCharToken(.CURLY_LEFT),
-            '}' => try self.oneCharToken(.CURLY_RIGHT),
-            ':' => try self.twoCharToken(.COLON, '=', .COLON_EQUALS),
-            ';' => try self.oneCharToken(.SEMICOLON),
-            '=' => try self.twoCharToken(.EQUALS, '=', .DOUBLE_EQALS),
+            '(' => try self.oneCharToken(.ParendLeft),
+            ')' => try self.oneCharToken(.ParendRight),
+            '{' => try self.oneCharToken(.CurlyLeft),
+            '}' => try self.oneCharToken(.CurlyRight),
+            ':' => try self.twoCharToken(.Colon, '=', .ColonEquals),
+            ';' => try self.oneCharToken(.Semicolon),
+            '=' => try self.twoCharToken(.Equals, '=', .DoubleEquals),
             '0'...'9' => try self.numberLiteral(),
             'a'...'z', 'A'...'Z' => try self.keywordsAndIdentifiers(),
             else => self.unsupportedCharacter(),
@@ -133,7 +140,7 @@ inline fn slash(self: *Tokenizer) !void {
         self.position += 2;
         return;
     }
-    try self.tokens.append(self.allocator, .{ .kind = .SLASH, .start = self.position, .end = self.position + 1 });
+    try self.tokens.append(self.allocator, .{ .kind = .Slash, .start = self.position, .end = self.position + 1 });
     self.position += 1;
 }
 
@@ -142,7 +149,7 @@ inline fn numberLiteral(self: *Tokenizer) !void {
     while (self.position < self.input.len and self.input[self.position] >= '0' and self.input[self.position] <= '9') {
         self.position += 1;
     }
-    try self.tokens.append(self.allocator, .{ .kind = .NUMBER_LITERAL, .start = start, .end = self.position });
+    try self.tokens.append(self.allocator, .{ .kind = .NumberLiteral, .start = start, .end = self.position });
 }
 
 fn keywordsAndIdentifiers(self: *Tokenizer) !void {
@@ -153,20 +160,13 @@ fn keywordsAndIdentifiers(self: *Tokenizer) !void {
         break;
     }
     const word = self.input[start..self.position];
-    const kind = keywordLookup(word);
+    const kind = KeywordMap.lookup(word);
 
     try self.tokens.append(self.allocator, .{
         .kind = kind,
         .start = start,
         .end = self.position,
     });
-}
-
-fn keywordLookup(word: []const u8) Token.Kind {
-    inline for (keyword_map) |entry| {
-        if (std.mem.eql(u8, word, entry.name)) return entry.kind;
-    }
-    return .IDENTIFIER;
 }
 
 fn unsupportedCharacter(self: *Tokenizer) noreturn {

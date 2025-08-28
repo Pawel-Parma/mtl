@@ -10,10 +10,15 @@ pub fn exit(code: u8) noreturn {
     std.process.exit(code);
 }
 
-
 pub inline fn dprint(comptime fmt: []const u8, args: anytype) void {
     if (builtin.mode == .Debug) {
         std.debug.print(fmt, args);
+    }
+}
+
+pub inline fn dprintn(comptime fmt: []const u8) void {
+    if (builtin.mode == .Debug) {
+        std.debug.print(fmt ++ "\n", .{});
     }
 }
 

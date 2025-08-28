@@ -1,9 +1,7 @@
 const std = @import("std");
 const core = @import("core.zig");
 
-
 const Token = @import("tokenizer.zig").Token;
-
 
 const Parser = @This();
 allocator: std.mem.Allocator,
@@ -16,22 +14,26 @@ pub const Node = struct {
     kind: Kind,
     children: List,
     token_index: ?usize = null,
-    
+
     const Kind = enum {
-        KEYWORD,
-        IDENTIFIER,
-        TYPE_IDENTIFIER,
-        DECLARATION,
-        EXPRESSION,
-        BINARY_EXPRESSION,
-        UNARY_EXPRESSION,
-        BLOCK,
+        Keyword,
+        Identifier,
+        TypeIdentifier,
+        Declaration,
+        Expression,
+        BinaryOperator,
+        UnaryOperator,
+        Scope,
     };
 
     pub const List = std.ArrayList(Node);
 
     pub inline fn getToken(self: *const Node, tokens: []const Token) ?Token {
-        return tokens[self.token_index.?];
+        if (self.token_index) |idx| {
+            return tokens[idx];
+        } else {
+            return null;
+        }
     }
 };
 
@@ -70,19 +72,16 @@ pub fn parse(self: *Parser) Error!void {
     }
 }
 
-fn parseNode(self: *Parser) !Node {
+fn parseNode(self: *Parser) Error!Node {
     const token = self.currentToken();
     return switch (token.kind) {
-        .CONST, .VAR => try self.parseDeclaration(),
-        .CURLY_LEFT => try self.parseBlock(),
-        else => {
-            core.rprint("Unexpected token kind {any}\n", .{token.kind});
-            core.exit(201);
-        },
+        .Const, .Var => try self.parseDeclaration(),
+        .CurlyLeft => try self.parseBlock(),
+        else => self.unsupportedToken(),
     };
 }
 
-fn currentToken(self: *Parser) Token {
+inline fn currentToken(self: *Parser) Token {
     if (self.current < self.tokens.len) {
         const token = self.tokens[self.current];
         core.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, token.getName(self.buffer) });
@@ -92,7 +91,7 @@ fn currentToken(self: *Parser) Token {
     core.exit(203);
 }
 
-fn currentOneOf(self: *Parser, comptime kinds: anytype) Error!Token {
+inline fn currentOneOf(self: *Parser, comptime kinds: anytype) !Token {
     const token = self.currentToken();
     inline for (kinds) |kind| {
         if (token.kind == kind) {
@@ -102,7 +101,7 @@ fn currentOneOf(self: *Parser, comptime kinds: anytype) Error!Token {
     core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
     return Error.UnexpectedToken;
 }
-fn consumeToken(self: *Parser, kind: Token.Kind) Error!Token {
+inline fn consumeToken(self: *Parser, kind: Token.Kind) !Token {
     const token = self.currentToken();
     if (token.kind != kind) {
         core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kind, token.kind });
@@ -112,7 +111,7 @@ fn consumeToken(self: *Parser, kind: Token.Kind) Error!Token {
     return token;
 }
 
-fn consumeOneOf(self: *Parser, comptime kinds: anytype) Error!Token {
+inline fn consumeOneOf(self: *Parser, comptime kinds: anytype) !Token {
     const token = self.currentToken();
     inline for (kinds) |kind| {
         if (token.kind == kind) {
@@ -124,60 +123,71 @@ fn consumeOneOf(self: *Parser, comptime kinds: anytype) Error!Token {
     return Error.UnexpectedToken;
 }
 
-fn parseDeclaration(self: *Parser) !Node {
+inline fn parseDeclaration(self: *Parser) !Node {
     const declaration_token_index = self.current;
-    _ = try self.consumeOneOf(.{ .CONST, .VAR });
+    const declaration_token = try self.consumeOneOf(.{ .Const, .Var });
     const name_identifier_index = self.current;
-    _ = try self.consumeToken(.IDENTIFIER);
+    _ = try self.consumeToken(.Identifier);
 
     var type_identifier_index: ?usize = null;
     var expr_node: Node = undefined;
-    const curr = try self.currentOneOf(.{ .COLON, .COLON_EQUALS, .EQUALS });
-    var assignemnt_kind = curr.kind;
+    const curr = try self.currentOneOf(.{ .Colon, .ColonEquals, .Equals });
+    var assignment_kind = curr.kind;
 
-    if (curr.kind == .COLON) {
-        _ = try self.consumeToken(.COLON);
+    if (curr.kind == .Colon) {
+        _ = try self.consumeToken(.Colon);
         type_identifier_index = self.current;
-        _ = try self.consumeToken(.IDENTIFIER);
-        assignemnt_kind = self.currentToken().kind;
+        _ = try self.consumeToken(.Identifier);
+        assignment_kind = self.currentToken().kind;
     }
 
-    if (assignemnt_kind == .COLON_EQUALS or assignemnt_kind == .EQUALS) {
-        _ = try self.consumeToken(assignemnt_kind);
+    if (declaration_token.kind == .Var and curr.kind == .Equals and assignment_kind == .Equals) {
+        core.rprint("Error: 'var' declarations must use ':=' for assignment when omitting type, not '='\n", .{});
+        return Error.UnexpectedToken;
+    }
+
+    if (assignment_kind == .ColonEquals or assignment_kind == .Equals) {
+        _ = try self.consumeToken(assignment_kind);
         expr_node = try self.parseExpression();
-        _ = try self.consumeToken(.SEMICOLON);
+        _ = try self.consumeToken(.Semicolon);
     }
 
     const children = try self.ArrayListFromTuple(.{
-        Node{ .kind = .KEYWORD, .children = .empty, .token_index = declaration_token_index },
-        Node{ .kind = .IDENTIFIER, .children = .empty, .token_index = name_identifier_index },
-        Node{ .kind = .TYPE_IDENTIFIER, .children = .empty, .token_index = type_identifier_index },
+        Node{ .kind = .Keyword, .children = .empty, .token_index = declaration_token_index },
+        Node{ .kind = .Identifier, .children = .empty, .token_index = name_identifier_index },
+        Node{ .kind = .TypeIdentifier, .children = .empty, .token_index = type_identifier_index },
         expr_node,
     });
 
     return Node{
-        .kind = .DECLARATION,
+        .kind = .Declaration,
         .children = children,
     };
 }
 
-fn parseBlock(self: *Parser) Error!Node {
-    _ = try self.consumeToken(.CURLY_LEFT);
+inline fn parseBlock(self: *Parser) Error!Node {
+    _ = try self.consumeToken(.CurlyLeft);
     var statements: Node.List = try .initCapacity(self.allocator, 16);
-    while (self.currentToken().kind != .CURLY_RIGHT) {
+    while (self.currentToken().kind != .CurlyRight) {
         const node = try self.parseNode();
         try statements.append(self.allocator, node);
     }
-    _ = try self.consumeToken(.CURLY_RIGHT);
+    _ = try self.consumeToken(.CurlyRight);
 
     return Node{
-        .kind = .BLOCK,
+        .kind = .Scope,
         .children = statements,
     };
 }
 
-fn parseExpression(self: *Parser) !Node {
-    return try self.parseExpressionWithPrecedence(Token.Precedence.LOWEST);
+inline fn unsupportedToken(self: *Parser) noreturn {
+    const token = self.currentToken();
+    core.rprint("Unexpected token kind {any}\n", .{token.kind});
+    core.exit(201);
+}
+
+inline fn parseExpression(self: *Parser) !Node {
+    return try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
 }
 
 fn parseExpressionWithPrecedence(self: *Parser, precedence: Token.Precedence) Error!Node {
@@ -195,28 +205,28 @@ fn parsePrefix(self: *Parser) !Node {
     const token_index = self.current;
     self.current += 1;
     switch (token.kind) {
-        .NUMBER_LITERAL, .IDENTIFIER => {
+        .NumberLiteral, .Identifier => {
             return Node{
-                .kind = .EXPRESSION,
+                .kind = .Expression,
                 .children = .empty,
                 .token_index = token_index,
             };
         },
-        .PAREND_LEFT => {
-            const expr = try self.parseExpressionWithPrecedence(Token.Precedence.LOWEST);
-            _ = try self.consumeToken(.PAREND_RIGHT);
+        .ParendLeft => {
+            const expr = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+            _ = try self.consumeToken(.ParendRight);
             const children = try self.ArrayListFromTuple(.{expr});
             return Node{
-                .kind = .EXPRESSION,
+                .kind = .Expression,
                 .children = children,
                 .token_index = token_index,
             };
         },
-        .MINUS => {
-            const expr = try self.parseExpressionWithPrecedence(Token.Precedence.PREFIX);
+        .Minus => {
+            const expr = try self.parseExpressionWithPrecedence(Token.Precedence.Prefix);
             const children = try self.ArrayListFromTuple(.{expr});
             return Node{
-                .kind = .UNARY_EXPRESSION,
+                .kind = .UnaryOperator,
                 .children = children,
                 .token_index = token_index,
             };
@@ -233,11 +243,11 @@ fn parseInfixOrSuffix(self: *Parser, left: Node) !Node {
     const token_index = self.current;
     self.current += 1;
     switch (token.kind) {
-        .PLUS, .MINUS, .STAR, .SLASH => {
+        .Plus, .Minus, .Star, .Slash => {
             const right = try self.parseExpressionWithPrecedence(token.getPrecedence());
             const children = try self.ArrayListFromTuple(.{ left, right });
             return Node{
-                .kind = .BINARY_EXPRESSION,
+                .kind = .BinaryOperator,
                 .children = children,
                 .token_index = token_index,
             };
