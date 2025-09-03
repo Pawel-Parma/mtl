@@ -1,7 +1,7 @@
 const std = @import("std");
 const core = @import("core.zig");
 
-const Token = @import("tokenizer.zig").Token;
+const Token = @import("token.zig");
 
 const Parser = @This();
 allocator: std.mem.Allocator,
@@ -9,6 +9,8 @@ buffer: []const u8,
 tokens: []const Token,
 current: usize,
 ast: Node.List,
+// TODO: refactor
+// TODO: add nice error messages, everywhere
 
 pub const Node = struct {
     kind: Kind,
@@ -23,6 +25,7 @@ pub const Node = struct {
         Expression,
         BinaryOperator,
         UnaryOperator,
+        NumberLiteral,
         Scope,
     };
 
@@ -84,7 +87,7 @@ fn parseNode(self: *Parser) Error!Node {
 inline fn currentToken(self: *Parser) Token {
     if (self.current < self.tokens.len) {
         const token = self.tokens[self.current];
-        core.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, token.getName(self.buffer) });
+        core.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, token.string(self.buffer) });
         return token;
     }
     core.rprint("Attempted to access current token out of bounds: {d} >= {d}\n", .{ self.current, self.tokens.len });
@@ -146,6 +149,11 @@ inline fn parseDeclaration(self: *Parser) !Node {
         return Error.UnexpectedToken;
     }
 
+    if (declaration_token.kind == .Const and assignment_kind == .ColonEquals) {
+        core.rprint("Error: 'const' declarations must use '=' for assignment when omitting type, not ':='\n", .{});
+        return Error.UnexpectedToken;
+    }
+
     if (assignment_kind == .ColonEquals or assignment_kind == .Equals) {
         _ = try self.consumeToken(assignment_kind);
         expr_node = try self.parseExpression();
@@ -193,7 +201,7 @@ inline fn parseExpression(self: *Parser) !Node {
 fn parseExpressionWithPrecedence(self: *Parser, precedence: Token.Precedence) Error!Node {
     var left = try self.parsePrefix();
 
-    while (precedence.toInt() < self.currentToken().getPrecedence().toInt()) {
+    while (precedence.toInt() < self.currentToken().precedence().toInt()) {
         left = try self.parseInfixOrSuffix(left);
     }
 
@@ -205,16 +213,16 @@ fn parsePrefix(self: *Parser) !Node {
     const token_index = self.current;
     self.current += 1;
     switch (token.kind) {
-        .NumberLiteral, .Identifier => {
+        .IntLiteral, .FloatLiteral, .Identifier => {
             return Node{
-                .kind = .Expression,
+                .kind = .NumberLiteral,
                 .children = .empty,
                 .token_index = token_index,
             };
         },
-        .ParendLeft => {
+        .ParenLeft => {
             const expr = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-            _ = try self.consumeToken(.ParendRight);
+            _ = try self.consumeToken(.ParenRight);
             const children = try self.ArrayListFromTuple(.{expr});
             return Node{
                 .kind = .Expression,
@@ -244,7 +252,7 @@ fn parseInfixOrSuffix(self: *Parser, left: Node) !Node {
     self.current += 1;
     switch (token.kind) {
         .Plus, .Minus, .Star, .Slash => {
-            const right = try self.parseExpressionWithPrecedence(token.getPrecedence());
+            const right = try self.parseExpressionWithPrecedence(token.precedence());
             const children = try self.ArrayListFromTuple(.{ left, right });
             return Node{
                 .kind = .BinaryOperator,

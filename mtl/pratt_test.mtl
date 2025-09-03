@@ -26,3 +26,5 @@ var m := 1 + -2 * -(3 + 4);
 }
 const myi32 = i32;
 var vartypemyi32: myi32 = i32;
+var gtype: u32 = 1231ą;
+var wtype: f32 = gtype;

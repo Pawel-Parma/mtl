@@ -2,7 +2,7 @@ const std = @import("std");
 const core = @import("core.zig");
 const primitive = @import("primitive.zig");
 
-const Token = @import("tokenizer.zig").Token;
+const Token = @import("token.zig");
 const Node = @import("parser.zig").Node;
 
 const DeclarationMap = std.StringHashMap(Declaration);
@@ -14,6 +14,7 @@ buffer: []const u8,
 tokens: []const Token,
 ast: Node.List,
 scopes: Scopes,
+// TODO: refactor
 
 pub const Declaration = struct {
     kind: Kind,
@@ -26,7 +27,11 @@ pub const Declaration = struct {
     };
 };
 
-pub const Error = std.mem.Allocator.Error;
+pub const Error = error{
+    TypeMismatch,
+    UndefinedIdentifier,
+    OutOfMemory,
+};
 
 pub fn init(allocator: std.mem.Allocator, buffer: []const u8, tokens: []const Token, ast: Node.List) Semantic {
     return .{
@@ -62,7 +67,7 @@ fn semanticPass(self: *Semantic, node: Node, depth: usize) Error!void {
 
     if (node.token_index) |token_index| {
         const token = node.getToken(self.tokens).?;
-        const token_text = token.getName(self.buffer);
+        const token_text = token.string(self.buffer);
         core.dprint("{s}{any} (token_index={any}) (token_kind={any}) (token_text=\"{s}\")\n", .{ indent, node.kind, token_index, token.kind, token_text });
     } else {
         core.dprint("{s}{any} (token_index=null)\n", .{ indent, node.kind });
@@ -90,7 +95,7 @@ inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
     const type_identifier_node = node.children.items[2];
     const expr_node = node.children.items[3];
 
-    const name = name_identifier_node.getToken(self.tokens).?.getName(self.buffer);
+    const name = name_identifier_node.getToken(self.tokens).?.string(self.buffer);
     if (primitive.isPrimitiveType(name)) {
         core.rprint("Error: Cannot declare variable '{s}', shadows primitive type \n", .{name});
         core.exit(12);
@@ -115,7 +120,7 @@ inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
     var symbol_type: ?primitive.Type = null;
     const type_identifier_token = type_identifier_node.getToken(self.tokens);
     if (type_identifier_token) |token| {
-        const type_name = token.getName(self.buffer);
+        const type_name = token.string(self.buffer);
         if (!primitive.isPrimitiveType(type_name)) {
             if (self.isInScope(type_name)) |scope_map| {
                 const decl = scope_map.get(type_name).?;
@@ -131,8 +136,8 @@ inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
         symbol_type = expr_type;
     }
 
-    if (symbol_type.?.toInt() != expr_type.toInt()) {
-        core.rprint("Error: Type mismatch in declaration of '{s}': expected {any}, got {any}\n", .{name, symbol_type, expr_type});
+    if (!self.typeEqluals(symbol_type.?, expr_type)) {
+        core.rprint("Error: Type mismatch in declaration of '{s}': expected {any}, got {any}\n", .{ name, symbol_type, expr_type });
         core.exit(12);
     }
 
@@ -159,25 +164,55 @@ inline fn unsupportedNode(self: *Semantic, node: Node) noreturn {
 }
 
 fn inferType(self: *Semantic, node: Node) !primitive.Type {
-    _ = self;
-    _ = node;
-    return .DebugVal;
-    // return switch (node.kind) {
-    //     .Identifier => {
-    //         const name = node.getToken(self.tokens).?.getName(self.buffer);
-    //         if (self.isInScope(name)) |scope_map| {
-    //             const decl = scope_map.get(name).?;
-    //             return decl.symbol_type;
-    //         } else {
-    //             return error.UndefinedIdentifier;
-    //         }
-    //     },
-    //     .Expression => {},
-    //     .BinaryOperator, .UnaryOperator => .;
-    //     ,
-    //     // Add more cases for literals, function calls, etc.
-    //     else => return error.UnknownType,
-    // }
+    const token = node.getToken(self.tokens).?;
+    const name = token.string(self.buffer);
+
+    switch (node.kind) {
+        .NumberLiteral => {
+            const dot_pos = std.mem.indexOf(u8, name, ".") orelse return .ComptimeInt;
+            for (name[dot_pos + 1 ..]) |c| {
+                if (c != '0') {
+                    return .ComptimeFloat;
+                }
+            }
+            return .ComptimeInt;
+        },
+        .Identifier => {
+            if (self.isInScope(name)) |scope_map| {
+                const decl = scope_map.get(name).?;
+                return decl.symbol_type;
+            }
+            return error.UndefinedIdentifier;
+        },
+        .UnaryOperator => {
+            return try self.inferType(node.children.items[0]);
+        },
+        .BinaryOperator => {
+            const left_type = try self.inferType(node.children.items[0]);
+            const right_type = try self.inferType(node.children.items[1]);
+            if (!self.typeEqluals(left_type, right_type)) {
+                return error.TypeMismatch;
+            }
+            return left_type;
+        },
+        .Expression => {
+            var exprs: [64]primitive.Type = undefined;
+            for (node.children.items, 0..) |child, i| {
+                exprs[i] = try self.inferType(child);
+            }
+            for (exprs) |expr| {
+                if (!self.typeEqluals(expr, exprs[0])) {
+                    return error.TypeMismatch;
+                }
+            }
+            return exprs[0];
+        },
+        else => {
+            core.dprintn("TODO");
+            core.dprint(" (in inferType for node kind {any})\n", .{node.kind});
+            return .DebugVal;
+        },
+    }
 }
 
 fn printAst(self: *Semantic) void {
@@ -202,4 +237,14 @@ fn printAstNode(self: *Semantic, node: Node, depth: usize) void {
     for (node.children.items) |child| {
         self.printAstNode(child, depth + 1);
     }
+}
+
+fn typeEqluals(self: *Semantic, left: primitive.Type, right: primitive.Type) bool {
+    _ = self;
+    if (left == .ComptimeInt or left == .ComptimeFloat or right == .ComptimeInt or right == .ComptimeFloat) {
+        // Include casts from comptime_int/float to u/i/f that can contain it
+        return true;
+    }
+
+    return left.toInt() == right.toInt();
 }

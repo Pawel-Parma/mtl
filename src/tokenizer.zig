@@ -1,87 +1,29 @@
 const std = @import("std");
 const core = @import("core.zig");
 
+const Token = @import("token.zig");
+
 const Tokenizer = @This();
 allocator: std.mem.Allocator,
-input: []const u8,
+buffer: []const u8,
 position: usize,
+line_number: usize,
+line_start: usize,
+failed: bool,
 tokens: std.ArrayList(Token),
 
-pub const Token = struct {
-    start: usize,
-    end: usize,
-    kind: Kind,
+pub const Error = error{
+    TokenizeFailed,
+} || std.mem.Allocator.Error;
 
-    pub const Kind = enum {
-        Plus,
-        Minus,
-        Star,
-        Slash,
-        NumberLiteral,
-        Var,
-        Const,
-        DoubleEquals,
-        Equals,
-        Colon,
-        ParendLeft,
-        ParendRight,
-        ColonEquals,
-        Semicolon,
-        Identifier,
-        CurlyLeft,
-        CurlyRight,
-    };
-
-    pub const Precedence = enum(u8) {
-        Lowest = 0,
-        Assignment,
-        Sum,
-        Product,
-        Prefix,
-        Suffix,
-
-        pub inline fn toInt(self: *const Precedence) u8 {
-            return @intFromEnum(self.*);
-        }
-    };
-
-    pub fn getPrecedence(self: *const Token) Precedence {
-        return switch (self.kind) {
-            .Equals, .ColonEquals => .Assignment,
-            .Plus, .Minus => .Sum,
-            .Star, .Slash => .Product,
-            .ParendLeft => .Suffix,
-            else => .Lowest,
-        };
-    }
-
-    pub inline fn getName(self: *const Token, buffer: []const u8) []const u8 {
-        return buffer[self.start..self.end];
-    }
-};
-
-const KeywordMap = struct {
-    pub const entries = [_]struct {
-        name: []const u8,
-        kind: Token.Kind,
-    }{
-        .{ .name = "var", .kind = .Var },
-        .{ .name = "const", .kind = .Const },
-    };
-
-    pub fn lookup(word: []const u8) Token.Kind {
-        inline for (KeywordMap.entries) |entry| {
-            if (std.mem.eql(u8, word, entry.name)) return entry.kind;
-        }
-        return .Identifier;
-    }
-};
-
-pub fn init(allocator: std.mem.Allocator, input: []const u8) Tokenizer {
+pub fn init(allocator: std.mem.Allocator, buffer: []const u8) Tokenizer {
     return .{
         .allocator = allocator,
-        .input = input,
+        .buffer = buffer,
         .position = 0,
+        .line_number = 1,
+        .line_start = 0,
+        .failed = false,
         .tokens = .empty,
     };
 }
@@ -90,98 +32,154 @@ pub fn deinit(self: *Tokenizer) void {
     self.tokens.deinit(self.allocator);
 }
 
-pub fn tokenize(self: *Tokenizer) std.mem.Allocator.Error!void {
-    try self.tokens.ensureTotalCapacityPrecise(self.allocator, 16);
-    while (self.position < self.input.len) {
-        switch (self.input[self.position]) {
-            ' ', '\t', '\r', '\n' => self.whitespace(),
-            '+' => try self.oneCharToken(.Plus),
+pub fn tokenize(self: *Tokenizer) Error!void {
+    const initialCapacity = @min(512, self.buffer.len / 2);
+    try self.tokens.ensureTotalCapacityPrecise(self.allocator, initialCapacity);
+    while (!self.isAtEnd()) {
+        switch (self.peek()) {
+            ' ', '\t', '\r', '\x0B', '\x0C' => _ = self.advance(),
+            '\n' => self.advanceLine(),
+            'a'...'z', 'A'...'Z' => try self.identifierToken(),
+            '0'...'9' => try self.numberLiteralToken(),
+            ';' => try self.oneCharToken(.Semicolon),
             '-' => try self.oneCharToken(.Minus),
+            '+' => try self.oneCharToken(.Plus),
             '*' => try self.oneCharToken(.Star),
-            '/' => try self.slash(),
-            '(' => try self.oneCharToken(.ParendLeft),
-            ')' => try self.oneCharToken(.ParendRight),
+            '/' => try self.slashToken(),
+            '(' => try self.oneCharToken(.ParenLeft),
+            ')' => try self.oneCharToken(.ParenRight),
             '{' => try self.oneCharToken(.CurlyLeft),
             '}' => try self.oneCharToken(.CurlyRight),
             ':' => try self.twoCharToken(.Colon, '=', .ColonEquals),
-            ';' => try self.oneCharToken(.Semicolon),
             '=' => try self.twoCharToken(.Equals, '=', .DoubleEquals),
-            '0'...'9' => try self.numberLiteral(),
-            'a'...'z', 'A'...'Z' => try self.keywordsAndIdentifiers(),
             else => self.unsupportedCharacter(),
         }
     }
+    if (self.failed) {
+        return error.TokenizeFailed;
+    }
 }
 
-inline fn whitespace(self: *Tokenizer) void {
+inline fn advance(self: *Tokenizer) usize {
     self.position += 1;
+    return self.position - 1;
 }
 
-inline fn oneCharToken(self: *Tokenizer, kind: Token.Kind) !void {
-    try self.tokens.append(self.allocator, .{ .kind = kind, .start = self.position, .end = self.position + 1 });
+inline fn advanceLine(self: *Tokenizer) void {
     self.position += 1;
+    self.line_number += 1;
+    self.line_start = self.position;
 }
 
-inline fn twoCharToken(self: *Tokenizer, kind_one: Token.Kind, char_two: u8, kind_two: Token.Kind) !void {
-    if (self.input[self.position + 1] == char_two) {
-        try self.tokens.append(self.allocator, .{ .kind = kind_two, .start = self.position, .end = self.position + 2 });
-        self.position += 2;
+inline fn peek(self: *Tokenizer) u8 {
+    return self.buffer[self.position];
+}
+
+inline fn isAtEnd(self: *Tokenizer) bool {
+    return self.position >= self.buffer.len;
+}
+
+inline fn isIdentifierChar(self: *Tokenizer) bool {
+    const c = self.peek();
+    return switch (c) {
+        'a'...'z', 'A'...'Z', '0'...'9', '_' => true,
+        else => false,
+    };
+}
+
+inline fn appendToken(self: *Tokenizer, kind: Token.Kind, start: usize, end: usize) !void {
+    try self.tokens.append(self.allocator, .{ .kind = kind, .start = start, .end = end });
+}
+
+fn oneCharToken(self: *Tokenizer, kind: Token.Kind) !void {
+    try self.appendToken(kind, self.position, self.position + 1);
+    _ = self.advance();
+}
+
+fn twoCharToken(self: *Tokenizer, kind_one: Token.Kind, char_two: u8, kind_two: Token.Kind) !void {
+    const start = self.advance();
+    if (!self.isAtEnd() and self.peek() == char_two) {
+        _ = self.advance();
+        try self.appendToken(kind_two, start, self.position);
         return;
     }
-    try self.tokens.append(self.allocator, .{ .kind = kind_one, .start = self.position, .end = self.position + 1 });
-    self.position += 1;
+    try self.appendToken(kind_one, start, self.position);
 }
 
-inline fn slash(self: *Tokenizer) !void {
-    if (self.input[self.position + 1] == '/') {
-        while (self.position < self.input.len and self.input[self.position] != '\n') {
-            self.position += 1;
+fn slashToken(self: *Tokenizer) !void {
+    const start = self.advance();
+    if (!self.isAtEnd() and self.peek() == '/') {
+        _ = self.advance();
+        while (!self.isAtEnd() and self.peek() != '\n') {
+            _ = self.advance();
         }
-        self.position += 2;
         return;
     }
-    try self.tokens.append(self.allocator, .{ .kind = .Slash, .start = self.position, .end = self.position + 1 });
-    self.position += 1;
+    try self.appendToken(.Slash, start, self.position);
 }
 
-inline fn numberLiteral(self: *Tokenizer) !void {
+fn numberLiteralToken(self: *Tokenizer) !void {
     const start = self.position;
-    while (self.position < self.input.len and self.input[self.position] >= '0' and self.input[self.position] <= '9') {
-        self.position += 1;
-    }
-    try self.tokens.append(self.allocator, .{ .kind = .NumberLiteral, .start = start, .end = self.position });
-}
-
-fn keywordsAndIdentifiers(self: *Tokenizer) !void {
-    const start = self.position;
-    while (self.position < self.input.len) : (self.position += 1) {
-        const c = self.input[self.position];
-        if ((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9')) continue;
-        break;
-    }
-    const word = self.input[start..self.position];
-    const kind = KeywordMap.lookup(word);
-
-    try self.tokens.append(self.allocator, .{
-        .kind = kind,
-        .start = start,
-        .end = self.position,
-    });
-}
-
-fn unsupportedCharacter(self: *Tokenizer) noreturn {
-    // TODO: make the source code utf-8 encoded as currently only the first codepoint of unsupported characters is reported
-    // TODO: add nice error messages, everywhere
-    var line_num: usize = 1;
-    var line_start: usize = 0;
-    for (self.input[0..self.position], 0..) |c, i| {
-        if (c == '\n') {
-            line_num += 1;
-            line_start = i + 1;
+    var has_dot = false;
+    while (!self.isAtEnd()) {
+        switch (self.peek()) {
+            '0'...'9', '_' => _ = self.advance(),
+            '.' => {
+                if (!has_dot) {
+                    _ = self.advance();
+                    switch (self.peek()) {
+                        '0'...'9', '_' => {},
+                        else => break,
+                    }
+                    has_dot = true;
+                }
+            },
+            else => break,
         }
     }
 
-    core.rprint("Error: line {d} - column {d}\n", .{ line_num, self.position - line_start + 1 });
-    core.rprint("Unsupported character: {d}\n\n", .{self.input[self.position]});
-    core.exit(101);
+    const kind: Token.Kind = if (has_dot) .FloatLiteral else .IntLiteral;
+
+    try self.appendToken(kind, start, self.position);
+}
+
+fn identifierToken(self: *Tokenizer) !void {
+    const start = self.position;
+    while (!self.isAtEnd() and self.isIdentifierChar()) {
+        _ = self.advance();
+    }
+    const word = self.buffer[start..self.position];
+    const kind = Token.KeywordMap.get(word) orelse .Identifier;
+
+    try self.appendToken(kind, start, self.position);
+}
+
+// fn unsupportedCharacter(self: *Tokenizer) void {
+//     // TODO: make the source code utf-8 encoded as currently only the first codepoint of unsupported characters is reported
+//     self.failed = true;
+//     _ = self.advance();
+//     const line = self.line_number;
+//     const col = self.position - self.line_start;
+
+//     core.rprint("Error: unsupported character at line {d}, column {d}\n", .{ line, col });
+//     core.rprint("Character: '{c}' (0x{x})\n\n", .{ self.peek(), self.peek() });
+// }
+fn unsupportedCharacter(self: *Tokenizer) void {
+    self.failed = true;
+    core.rprint("{c}\n", .{self.peek()});
+
+    const len = std.unicode.utf8ByteSequenceLength(self.peek()) catch unreachable;
+    // Advance by the actual number of bytes consumed
+    core.rprint("Advancing by {d} bytes\n", .{ len });
+    self.position += len;
+
+    const line = self.line_number;
+    const col = self.position - self.line_start;
+
+    core.rprint("Error: unsupported character at line {d}, column {d}\n", .{ line, col });
+    core.dprintn("\n");
+    core.dprint("{s}\n", .{self.buffer});
+    core.dprintn("\n");
+    core.rprint("1111: {s}\n", .{self.buffer[self.position - 5.. self.position + 5]});
+    core.rprint("Character: '{s}' \n", .{self.buffer[self.position - len.. self.position]});
 }

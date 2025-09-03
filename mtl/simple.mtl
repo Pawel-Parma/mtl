@@ -7,3 +7,4 @@ var f: i32 = e;
 var g := 123;
 const g := 123;
 // asadadadsad asadadadsad
+===
