@@ -6,6 +6,8 @@ start: usize,
 end: usize,
 
 pub const Kind = enum {
+    Invalid,
+
     Plus,
     Minus,
     Star,

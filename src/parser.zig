@@ -2,49 +2,20 @@ const std = @import("std");
 const core = @import("core.zig");
 
 const Token = @import("token.zig");
+const Node = @import("node.zig");
 
 const Parser = @This();
 allocator: std.mem.Allocator,
 buffer: []const u8,
 tokens: []const Token,
 current: usize,
-ast: Node.List,
+ast: std.ArrayList(Node),
 // TODO: refactor
 // TODO: add nice error messages, everywhere
 
-pub const Node = struct {
-    kind: Kind,
-    children: List,
-    token_index: ?usize = null,
-
-    const Kind = enum {
-        Keyword,
-        Identifier,
-        TypeIdentifier,
-        Declaration,
-        Expression,
-        BinaryOperator,
-        UnaryOperator,
-        NumberLiteral,
-        Scope,
-    };
-
-    pub const List = std.ArrayList(Node);
-
-    pub inline fn getToken(self: *const Node, tokens: []const Token) ?Token {
-        if (self.token_index) |idx| {
-            return tokens[idx];
-        } else {
-            return null;
-        }
-    }
-};
-
 pub const Error = error{
     UnexpectedToken,
-
-    OutOfMemory,
-};
+} || std.mem.Allocator.Error;
 
 pub fn init(allocator: std.mem.Allocator, buffer: []const u8, tokens: []const Token) Parser {
     return .{
@@ -67,16 +38,17 @@ pub fn deinit(self: *Parser) !void {
 }
 
 pub fn parse(self: *Parser) Error!void {
-    core.dprint("\nTokens:\n", .{});
-    try self.ast.ensureTotalCapacity(self.allocator, 16);
-    while (self.current < self.tokens.len) {
-        const node: Node = try self.parseNode();
+    const initialCapacity = @min(512, self.tokens.len / 2);
+    try self.ast.ensureTotalCapacity(self.allocator, initialCapacity);
+    while (!self.isAtEnd()) {
+        const node = try self.parseNode();
         try self.ast.append(self.allocator, node);
     }
+    self.printAst();
 }
 
 fn parseNode(self: *Parser) Error!Node {
-    const token = self.currentToken();
+    const token = self.peek();
     return switch (token.kind) {
         .Const, .Var => try self.parseDeclaration(),
         .CurlyLeft => try self.parseBlock(),
@@ -84,18 +56,20 @@ fn parseNode(self: *Parser) Error!Node {
     };
 }
 
-inline fn currentToken(self: *Parser) Token {
-    if (self.current < self.tokens.len) {
-        const token = self.tokens[self.current];
-        core.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, token.string(self.buffer) });
-        return token;
-    }
-    core.rprint("Attempted to access current token out of bounds: {d} >= {d}\n", .{ self.current, self.tokens.len });
-    core.exit(203);
+inline fn advance(self: *Parser) void {
+    self.current += 1;
+}
+
+inline fn peek(self: *Parser) Token {
+    return self.tokens[self.current];
+}
+
+inline fn isAtEnd(self: *Parser) bool { // TODO: put before unnesecery expects
+    return self.current >= self.tokens.len;
 }
 
 inline fn currentOneOf(self: *Parser, comptime kinds: anytype) !Token {
-    const token = self.currentToken();
+    const token = self.peek();
     inline for (kinds) |kind| {
         if (token.kind == kind) {
             return token;
@@ -104,21 +78,22 @@ inline fn currentOneOf(self: *Parser, comptime kinds: anytype) !Token {
     core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
     return Error.UnexpectedToken;
 }
-inline fn consumeToken(self: *Parser, kind: Token.Kind) !Token {
-    const token = self.currentToken();
+
+inline fn expect(self: *Parser, kind: Token.Kind) !Token {
+    const token = self.peek();
     if (token.kind != kind) {
         core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kind, token.kind });
         return Error.UnexpectedToken;
     }
-    self.current += 1;
+    self.advance();
     return token;
 }
 
 inline fn consumeOneOf(self: *Parser, comptime kinds: anytype) !Token {
-    const token = self.currentToken();
+    const token = self.peek();
     inline for (kinds) |kind| {
         if (token.kind == kind) {
-            self.current += 1;
+            self.advance();
             return token;
         }
     }
@@ -126,11 +101,19 @@ inline fn consumeOneOf(self: *Parser, comptime kinds: anytype) !Token {
     return Error.UnexpectedToken;
 }
 
-inline fn parseDeclaration(self: *Parser) !Node {
+inline fn ArrayListFromTuple(self: *Parser, tuple: anytype) !std.ArrayList(Node) {
+    var list: std.ArrayList(Node) = try .initCapacity(self.allocator, tuple.len);
+    inline for (tuple) |item| {
+        try list.append(self.allocator, item);
+    }
+    return list;
+}
+
+fn parseDeclaration(self: *Parser) !Node {
     const declaration_token_index = self.current;
     const declaration_token = try self.consumeOneOf(.{ .Const, .Var });
     const name_identifier_index = self.current;
-    _ = try self.consumeToken(.Identifier);
+    _ = try self.expect(.Identifier);
 
     var type_identifier_index: ?usize = null;
     var expr_node: Node = undefined;
@@ -138,10 +121,10 @@ inline fn parseDeclaration(self: *Parser) !Node {
     var assignment_kind = curr.kind;
 
     if (curr.kind == .Colon) {
-        _ = try self.consumeToken(.Colon);
+        _ = try self.expect(.Colon);
         type_identifier_index = self.current;
-        _ = try self.consumeToken(.Identifier);
-        assignment_kind = self.currentToken().kind;
+        _ = try self.expect(.Identifier);
+        assignment_kind = self.peek().kind;
     }
 
     if (declaration_token.kind == .Var and curr.kind == .Equals and assignment_kind == .Equals) {
@@ -155,9 +138,9 @@ inline fn parseDeclaration(self: *Parser) !Node {
     }
 
     if (assignment_kind == .ColonEquals or assignment_kind == .Equals) {
-        _ = try self.consumeToken(assignment_kind);
+        _ = try self.expect(assignment_kind);
         expr_node = try self.parseExpression();
-        _ = try self.consumeToken(.Semicolon);
+        _ = try self.expect(.Semicolon);
     }
 
     const children = try self.ArrayListFromTuple(.{
@@ -173,25 +156,19 @@ inline fn parseDeclaration(self: *Parser) !Node {
     };
 }
 
-inline fn parseBlock(self: *Parser) Error!Node {
-    _ = try self.consumeToken(.CurlyLeft);
-    var statements: Node.List = try .initCapacity(self.allocator, 16);
-    while (self.currentToken().kind != .CurlyRight) {
+fn parseBlock(self: *Parser) Error!Node {
+    _ = try self.expect(.CurlyLeft);
+    var statements: std.ArrayList(Node) = try .initCapacity(self.allocator, 16);
+    while (self.peek().kind != .CurlyRight) {
         const node = try self.parseNode();
         try statements.append(self.allocator, node);
     }
-    _ = try self.consumeToken(.CurlyRight);
+    _ = try self.expect(.CurlyRight);
 
     return Node{
         .kind = .Scope,
         .children = statements,
     };
-}
-
-inline fn unsupportedToken(self: *Parser) noreturn {
-    const token = self.currentToken();
-    core.rprint("Unexpected token kind {any}\n", .{token.kind});
-    core.exit(201);
 }
 
 inline fn parseExpression(self: *Parser) !Node {
@@ -201,7 +178,7 @@ inline fn parseExpression(self: *Parser) !Node {
 fn parseExpressionWithPrecedence(self: *Parser, precedence: Token.Precedence) Error!Node {
     var left = try self.parsePrefix();
 
-    while (precedence.toInt() < self.currentToken().precedence().toInt()) {
+    while (precedence.toInt() < self.peek().precedence().toInt()) {
         left = try self.parseInfixOrSuffix(left);
     }
 
@@ -209,9 +186,9 @@ fn parseExpressionWithPrecedence(self: *Parser, precedence: Token.Precedence) Er
 }
 
 fn parsePrefix(self: *Parser) !Node {
-    const token = self.currentToken();
+    const token = self.peek();
     const token_index = self.current;
-    self.current += 1;
+    self.advance();
     switch (token.kind) {
         .IntLiteral, .FloatLiteral, .Identifier => {
             return Node{
@@ -222,7 +199,7 @@ fn parsePrefix(self: *Parser) !Node {
         },
         .ParenLeft => {
             const expr = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-            _ = try self.consumeToken(.ParenRight);
+            _ = try self.expect(.ParenRight);
             const children = try self.ArrayListFromTuple(.{expr});
             return Node{
                 .kind = .Expression,
@@ -247,9 +224,9 @@ fn parsePrefix(self: *Parser) !Node {
 }
 
 fn parseInfixOrSuffix(self: *Parser, left: Node) !Node {
-    const token = self.currentToken();
+    const token = self.peek();
     const token_index = self.current;
-    self.current += 1;
+    self.advance();
     switch (token.kind) {
         .Plus, .Minus, .Star, .Slash => {
             const right = try self.parseExpressionWithPrecedence(token.precedence());
@@ -266,10 +243,33 @@ fn parseInfixOrSuffix(self: *Parser, left: Node) !Node {
     }
 }
 
-inline fn ArrayListFromTuple(self: *Parser, tuple: anytype) !Node.List {
-    var list: Node.List = try .initCapacity(self.allocator, tuple.len);
-    inline for (tuple) |item| {
-        try list.append(self.allocator, item);
+fn unsupportedToken(self: *Parser) noreturn {
+    const token = self.peek();
+    core.rprint("Unexpected token kind {any}\n", .{token.kind});
+    core.exit(201);
+}
+
+fn printAst(self: *Parser) void {
+    core.dprint("AST:\n", .{});
+    for (self.ast.items) |node| {
+        self.printAstNode(node, 0);
     }
-    return list;
+    core.dprint("\n", .{});
+}
+
+fn printAstNode(self: *Parser, node: Node, depth: usize) void {
+    var indent_buf: [32]u8 = undefined;
+    const indent = indent_buf[0..@min(depth * 2, indent_buf.len)];
+    for (indent) |*c| c.* = ' ';
+
+    const token = node.token(self.tokens);
+    if (token) |t| {
+        core.dprint("{s}{any} (token_index={d}) (token.kind={any}) (token.text=\"{s}\")\n", .{ indent, node.kind, node.token_index.?, t.kind, t.string(self.buffer) });
+    } else {
+        core.dprint("{s}{any} (token_index=null)\n", .{ indent, node.kind });
+    }
+
+    for (node.children.items) |child| {
+        self.printAstNode(child, depth + 1);
+    }
 }

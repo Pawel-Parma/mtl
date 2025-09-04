@@ -5,7 +5,7 @@ const Tokenizer = @import("tokenizer.zig");
 const Parser = @import("parser.zig");
 const Semantic = @import("semantic.zig");
 
-pub fn main() void {
+pub fn main() u8 {
     const allocator = std.heap.page_allocator;
 
     const args = std.process.argsAlloc(allocator) catch {
@@ -15,7 +15,7 @@ pub fn main() void {
     defer std.process.argsFree(allocator, args);
     if (args.len < 2) {
         printUsage();
-        return;
+        return 0;
     } else if (args.len > 3) {
         core.rprint("Too many program arguments provided, see usage using: mtl --help\n", .{});
         core.exit(2);
@@ -49,11 +49,14 @@ pub fn main() void {
         core.exit(6);
     };
 
-    var tokenizer = Tokenizer.init(allocator, buffer);
+    var tokenizer = Tokenizer.init(allocator, buffer, file_path);
     defer tokenizer.deinit();
-    tokenizer.tokenize() catch |err| {
-        core.rprint("Tokenization failed: {any}\n", .{err});
-        core.exit(7);
+    tokenizer.tokenize() catch |err| switch (err) {
+        error.TokenizeFailed => return 0,
+        error.OutOfMemory => {
+            core.rprint("Tokenization failed: {any}\n", .{err});
+            core.exit(8);
+        },
     };
     const tokens = tokenizer.tokens.items;
 
@@ -74,6 +77,7 @@ pub fn main() void {
         core.rprint("Semantic analysis failed: {any}\n", .{err});
         core.exit(10);
     };
+    return 0;
 }
 
 fn printUsage() void {

@@ -3,7 +3,7 @@ const core = @import("core.zig");
 const primitive = @import("primitive.zig");
 
 const Token = @import("token.zig");
-const Node = @import("parser.zig").Node;
+const Node = @import("node.zig");
 
 const DeclarationMap = std.StringHashMap(Declaration);
 const Scopes = std.ArrayList(DeclarationMap);
@@ -12,7 +12,7 @@ const Semantic = @This();
 allocator: std.mem.Allocator,
 buffer: []const u8,
 tokens: []const Token,
-ast: Node.List,
+ast: std.ArrayList(Node),
 scopes: Scopes,
 // TODO: refactor
 
@@ -33,7 +33,7 @@ pub const Error = error{
     OutOfMemory,
 };
 
-pub fn init(allocator: std.mem.Allocator, buffer: []const u8, tokens: []const Token, ast: Node.List) Semantic {
+pub fn init(allocator: std.mem.Allocator, buffer: []const u8, tokens: []const Token, ast: std.ArrayList(Node)) Semantic {
     return .{
         .allocator = allocator,
         .buffer = buffer,
@@ -48,10 +48,6 @@ pub fn deinit(self: *Semantic) void {
 }
 
 pub fn analyze(self: *Semantic) !void {
-    core.dprint("\nAST:\n", .{});
-    self.printAst();
-    core.dprint("\n\n", .{});
-
     try self.scopes.append(self.allocator, std.StringHashMap(Declaration).init(self.allocator));
     // TODO: make global scope lazly analized
     for (self.ast.items) |node| {
@@ -66,7 +62,7 @@ fn semanticPass(self: *Semantic, node: Node, depth: usize) Error!void {
     for (indent) |*c| c.* = ' ';
 
     if (node.token_index) |token_index| {
-        const token = node.getToken(self.tokens).?;
+        const token = node.token(self.tokens).?;
         const token_text = token.string(self.buffer);
         core.dprint("{s}{any} (token_index={any}) (token_kind={any}) (token_text=\"{s}\")\n", .{ indent, node.kind, token_index, token.kind, token_text });
     } else {
@@ -95,7 +91,7 @@ inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
     const type_identifier_node = node.children.items[2];
     const expr_node = node.children.items[3];
 
-    const name = name_identifier_node.getToken(self.tokens).?.string(self.buffer);
+    const name = name_identifier_node.token(self.tokens).?.string(self.buffer);
     if (primitive.isPrimitiveType(name)) {
         core.rprint("Error: Cannot declare variable '{s}', shadows primitive type \n", .{name});
         core.exit(12);
@@ -110,7 +106,7 @@ inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
         }
     }
 
-    const kind: Declaration.Kind = switch (declaration_node.getToken(self.tokens).?.kind) {
+    const kind: Declaration.Kind = switch (declaration_node.token(self.tokens).?.kind) {
         .Var => .Var,
         .Const => .Const,
         else => unreachable,
@@ -118,7 +114,7 @@ inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
 
     const expr_type = try self.inferType(expr_node);
     var symbol_type: ?primitive.Type = null;
-    const type_identifier_token = type_identifier_node.getToken(self.tokens);
+    const type_identifier_token = type_identifier_node.token(self.tokens);
     if (type_identifier_token) |token| {
         const type_name = token.string(self.buffer);
         if (!primitive.isPrimitiveType(type_name)) {
@@ -164,7 +160,7 @@ inline fn unsupportedNode(self: *Semantic, node: Node) noreturn {
 }
 
 fn inferType(self: *Semantic, node: Node) !primitive.Type {
-    const token = node.getToken(self.tokens).?;
+    const token = node.token(self.tokens).?;
     const name = token.string(self.buffer);
 
     switch (node.kind) {
@@ -215,29 +211,6 @@ fn inferType(self: *Semantic, node: Node) !primitive.Type {
     }
 }
 
-fn printAst(self: *Semantic) void {
-    for (self.ast.items) |node| {
-        self.printAstNode(node, 0);
-    }
-}
-
-fn printAstNode(self: *Semantic, node: Node, depth: usize) void {
-    var indent_buf: [32]u8 = undefined;
-    const indent = indent_buf[0..@min(depth * 2, indent_buf.len)];
-    for (indent) |*c| c.* = ' ';
-
-    if (node.token_index) |token_index| {
-        const token = self.tokens[token_index];
-        const token_text = self.buffer[token.start..token.end];
-        core.dprint("{s}{any} (token_index={d}) (token_kind={any}) (token_text=\"{s}\")\n", .{ indent, node.kind, token_index, token.kind, token_text });
-    } else {
-        core.dprint("{s}{any} (token_index=null)\n", .{ indent, node.kind });
-    }
-
-    for (node.children.items) |child| {
-        self.printAstNode(child, depth + 1);
-    }
-}
 
 fn typeEqluals(self: *Semantic, left: primitive.Type, right: primitive.Type) bool {
     _ = self;
