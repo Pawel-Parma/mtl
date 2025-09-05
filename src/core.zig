@@ -6,6 +6,15 @@ pub fn panic(code: u8) noreturn {
     @panic("Exiting");
 }
 
+pub const Code = enum(u8) {
+    OutOfMemory = 50,
+};
+
+pub fn exitCode(reason: []const u8, code: Code) noreturn {
+    rprint("{s}: {any}\n", .{ reason, code });
+    exit(@intFromEnum(code));
+}
+
 pub fn exit(code: u8) noreturn {
     std.process.exit(code);
 }
@@ -42,7 +51,14 @@ pub inline fn redEnd() void {
     std.debug.print("\x1b[0m", .{});
 }
 
-pub fn printSourceLine(message: []const u8, file_path: []const u8, line_number: usize, column: usize, line: []const u8) void {
+pub fn printSourceLine(
+    message: []const u8,
+    file_path: []const u8,
+    line_number: usize,
+    column: usize,
+    line: []const u8,
+    token_length: usize,
+) void {
     boldStart();
     rprint("{s}:{d}:{d} ", .{ file_path, line_number, column });
     boldEnd();
@@ -54,5 +70,19 @@ pub fn printSourceLine(message: []const u8, file_path: []const u8, line_number: 
     var spaces: [256]u8 = undefined;
     const space_count = @min(column, spaces.len);
     @memset(spaces[0..space_count], ' ');
-    rprint("    {s}^\n", .{spaces[0..space_count]});
+    rprint("    {s}^", .{spaces[0..space_count]});
+    var t: usize = 1;
+    while (t < token_length and column + t < line.len and line[column + t] != '\n') : (t += 1) {
+        rprint("~", .{});
+    }
+    rprint("\n", .{});
+}
+
+pub fn readFileToBuffer(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
+    const file = try std.fs.cwd().openFile(file_path, .{});
+    defer file.close();
+    const file_size = try file.getEndPos();
+    const buffer = try allocator.alloc(u8, file_size);
+    _ = try file.readAll(buffer);
+    return buffer;
 }

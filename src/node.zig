@@ -7,21 +7,25 @@ children: std.ArrayList(Node),
 token_index: ?usize = null,
 
 pub const Kind = enum {
-    Keyword,
+    Invalid,
+
+    UnaryOperator,
+    BinaryOperator,
+
+    NumberLiteral,
+
     Identifier,
     TypeIdentifier,
+
+    Keyword,
     Declaration,
+
     Expression,
-    BinaryOperator,
-    UnaryOperator,
-    NumberLiteral,
+
     Scope,
 };
 
 pub inline fn token(self: *const Node, tokens: []const Token) ?Token {
-    if (self.token_index) |idx| {
-        return tokens[idx];
-    } else {
-        return null;
-    }
+    const idx = self.token_index orelse return null;
+    return tokens[idx];
 }

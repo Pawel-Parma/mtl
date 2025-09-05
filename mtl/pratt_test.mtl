@@ -24,7 +24,3 @@ var m := 1 + -2 * -(3 + 4);
 {
     var n: i32 = 2;
 }
-const myi32 = i32;
-var vartypemyi32: myi32 = i32;
-var gtype: u32 = 1231;
-var wtype: f32 = gtype;

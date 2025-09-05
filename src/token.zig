@@ -30,7 +30,7 @@ pub const Kind = enum {
     CurlyLeft,
     CurlyRight,
 
-    Semicolon,
+    Eol,
 };
 
 pub const KeywordMap: std.StaticStringMap(Kind) = .initComptime([_]struct { []const u8, Token.Kind }{

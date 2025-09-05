@@ -5,7 +5,7 @@ const Tokenizer = @import("tokenizer.zig");
 const Parser = @import("parser.zig");
 const Semantic = @import("semantic.zig");
 
-pub fn main() u8 {
+pub fn main() !u8 {
     const allocator = std.heap.page_allocator;
 
     const args = std.process.argsAlloc(allocator) catch {
@@ -26,52 +26,30 @@ pub fn main() u8 {
         printUsage();
     }
 
-    const file_path = args[1];
-    const file = std.fs.cwd().openFile(file_path, .{}) catch {
-        core.rprint("Failed to open file: {s}\n", .{file_path});
+    const file_path = args[1]; // TODO: multifile
+    const file_buffer = core.readFileToBuffer(allocator, file_path) catch |err| {
+        core.rprint("Failed to read file: {s} - error: {any}\n", .{ file_path, err });
         core.exit(3);
     };
-    defer file.close();
+    defer allocator.free(file_buffer);
 
-    const file_size = file.getEndPos() catch {
-        core.rprint("Failed to get file size: {s}\n", .{file_path});
-        core.exit(4);
-    };
-
-    const buffer = allocator.alloc(u8, file_size) catch {
-        core.rprint("Failed to allocate buffer for file: {s}\n", .{file_path});
-        core.exit(5);
-    };
-    defer allocator.free(buffer);
-
-    _ = file.readAll(buffer) catch {
-        core.rprint("Failed to read file: {s}\n", .{file_path});
-        core.exit(6);
-    };
-
-    var tokenizer = Tokenizer.init(allocator, buffer, file_path);
+    var tokenizer = Tokenizer.init(allocator, file_buffer, file_path);
     defer tokenizer.deinit();
     tokenizer.tokenize() catch |err| switch (err) {
+        error.OutOfMemory => core.exitCode("Tokenization failed", .OutOfMemory),
         error.TokenizeFailed => return 0,
-        error.OutOfMemory => {
-            core.rprint("Tokenization failed: {any}\n", .{err});
-            core.exit(8);
-        },
     };
     const tokens = tokenizer.tokens.items;
 
-    var parser = Parser.init(allocator, buffer, tokens);
-    defer parser.deinit() catch |err| {
-        core.rprint("Parser deinitialization failed, LOL: {any}\n", .{err});
-        core.exit(8);
-    };
-    parser.parse() catch |err| {
-        core.rprint("Parsing failed: {any}\n", .{err});
-        core.exit(9);
+    var parser = Parser.init(allocator, file_buffer, file_path, tokens);
+    defer parser.deinit() catch core.exitCode("Parser deinitialization failed", .OutOfMemory);
+    parser.parse() catch |err| switch (err) {
+        error.OutOfMemory => core.exitCode("Parsing failed", .OutOfMemory),
+        error.UnexpectedToken => return 0,
     };
     const ast = parser.ast;
 
-    var semantic = Semantic.init(allocator, buffer, tokens, ast);
+    var semantic = Semantic.init(allocator, file_buffer, tokens, ast);
     defer semantic.deinit();
     semantic.analyze() catch |err| {
         core.rprint("Semantic analysis failed: {any}\n", .{err});

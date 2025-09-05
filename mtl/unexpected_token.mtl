@@ -1,0 +1,12 @@
+const a = 123;
+const b = a;
+a;
+const c: i32 = 123;
+b;
+var d: i32 = 21;
+var : = 21;
+b
+var c := +1;
+var e := c;
+111;
+var aaaa := +123; 

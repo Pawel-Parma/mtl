@@ -41,7 +41,7 @@ pub fn tokenize(self: *Tokenizer) Error!void {
         const token = self.nextToken() orelse continue;
         try self.tokens.append(self.allocator, token);
     }
-    self.printTokens();
+    if (self.success_state catch null != null) self.printTokens();
     return self.success_state;
 }
 
@@ -51,13 +51,10 @@ pub fn nextToken(self: *Tokenizer) ?Token {
             _ = self.advance();
             break :blk null;
         },
-        '\n' => blk: {
-            self.advanceLine();
-            break :blk null;
-        },
         'a'...'z', 'A'...'Z' => self.identifierToken(),
         '0'...'9' => self.numberLiteralToken(),
-        ';' => self.oneCharToken(.Semicolon),
+        '\n' => self.newLineToken(),
+        ';' => self.oneCharToken(.Eol),
         '-' => self.oneCharToken(.Minus),
         '+' => self.oneCharToken(.Plus),
         '*' => self.oneCharToken(.Star),
@@ -75,12 +72,6 @@ pub fn nextToken(self: *Tokenizer) ?Token {
 inline fn advance(self: *Tokenizer) usize {
     self.position += 1;
     return self.position - 1;
-}
-
-inline fn advanceLine(self: *Tokenizer) void {
-    self.position += 1;
-    self.line_number += 1;
-    self.line_start = self.position;
 }
 
 inline fn peek(self: *Tokenizer) u8 {
@@ -111,6 +102,13 @@ fn twoCharToken(self: *Tokenizer, kind_one: Token.Kind, char_two: u8, kind_two: 
         return .{ .kind = kind_two, .start = start, .end = self.position };
     }
     return .{ .kind = kind_one, .start = start, .end = self.position };
+}
+
+fn newLineToken(self: *Tokenizer) ?Token {
+    self.line_number += 1;
+    self.line_start = self.position + 1;
+    _ = self.advance();
+    return null; // TODO: self.oneCharToken(.Eol);
 }
 
 fn slashToken(self: *Tokenizer) ?Token {
@@ -168,14 +166,25 @@ fn unsupportedCharacter(self: *Tokenizer) Token {
     const line_end = std.mem.indexOfScalarPos(u8, self.buffer, self.position, '\n') orelse self.buffer.len - self.position;
     const line = self.buffer[self.line_start..line_end];
 
-    core.printSourceLine("encountered unsupported character", self.file_path, self.line_number, column_number, line);
+    core.printSourceLine(
+        "encountered unsupported character",
+        self.file_path,
+        self.line_number,
+        column_number,
+        line,
+        1,
+    );
     return .{ .kind = .Invalid, .start = self.position - len, .end = self.position };
 }
 
 fn printTokens(self: *Tokenizer) void {
     core.dprint("\nTokens:\n", .{});
     for (self.tokens.items) |token| {
-        core.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, token.string(self.buffer) });
+        var string = token.string(self.buffer);
+        if (string[0] == '\n') {
+            string = "\\n";
+        }
+        core.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, string });
     }
     core.dprint("\n", .{});
 }
