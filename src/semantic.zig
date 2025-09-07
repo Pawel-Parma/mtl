@@ -5,15 +5,12 @@ const primitive = @import("primitive.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
 
-const DeclarationMap = std.StringHashMap(Declaration);
-const Scopes = std.ArrayList(DeclarationMap);
-
 const Semantic = @This();
 allocator: std.mem.Allocator,
 buffer: []const u8,
 tokens: []const Token,
 ast: std.ArrayList(Node),
-scopes: Scopes,
+scopes: std.ArrayList(std.StringHashMap(Declaration)),
 // TODO: refactor
 
 pub const Declaration = struct {
@@ -57,17 +54,6 @@ pub fn analyze(self: *Semantic) !void {
 }
 
 fn semanticPass(self: *Semantic, node: Node, depth: usize) Error!void {
-    var indent_buf: [32]u8 = undefined;
-    const indent = indent_buf[0..@min(depth * 2, indent_buf.len)];
-    for (indent) |*c| c.* = ' ';
-
-    if (node.token_index) |token_index| {
-        const token = node.token(self.tokens).?;
-        const token_text = token.string(self.buffer);
-        core.dprint("{s}{any} (token_index={any}) (token_kind={any}) (token_text=\"{s}\")\n", .{ indent, node.kind, token_index, token.kind, token_text });
-    } else {
-        core.dprint("{s}{any} (token_index=null)\n", .{ indent, node.kind });
-    }
     switch (node.kind) {
         .VarDeclaration, .ConstDeclaration => try self.declaration(node, depth),
         .Scope => try self.scope(node, depth),
@@ -75,7 +61,7 @@ fn semanticPass(self: *Semantic, node: Node, depth: usize) Error!void {
     }
 }
 
-fn isInScope(self: *Semantic, name: []const u8) ?*DeclarationMap {
+fn isInScope(self: *Semantic, name: []const u8) ?*std.StringHashMap(Declaration) {
     for (self.scopes.items) |*scope_map| {
         if (scope_map.contains(name)) {
             return scope_map;
@@ -136,7 +122,7 @@ inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
         symbol_type = expr_type;
     }
 
-    if (!self.typeEqluals(symbol_type.?, expr_type)) {
+    if (!symbol_type.?.equals(expr_type)) {
         core.rprint("Error: Type mismatch in declaration of '{s}': expected {any}, got {any}\n", .{ name, symbol_type, expr_type });
         core.exit(12);
     }
@@ -182,6 +168,10 @@ fn inferType(self: *Semantic, node: Node) !primitive.Type {
                 const decl = scope_map.get(name).?;
                 return decl.symbol_type;
             }
+            if (primitive.isPrimitiveType(name)) {
+                return primitive.lookup(name).?;
+            }
+            core.rprint("Error: Undefined identifier '{s}'\n", .{name});
             return error.UndefinedIdentifier;
         },
         .UnaryOperator => {
@@ -190,7 +180,8 @@ fn inferType(self: *Semantic, node: Node) !primitive.Type {
         .BinaryOperator => {
             const left_type = try self.inferType(node.children[0]);
             const right_type = try self.inferType(node.children[1]);
-            if (!self.typeEqluals(left_type, right_type)) {
+            if (!left_type.equals(right_type)) {
+                core.rprint("Error: Type mismatch in binary operator: expected {any}, got {any}\n", .{ left_type, right_type });
                 return error.TypeMismatch;
             }
             return left_type;
@@ -201,7 +192,8 @@ fn inferType(self: *Semantic, node: Node) !primitive.Type {
                 exprs[i] = try self.inferType(child);
             }
             for (exprs) |expr| {
-                if (!self.typeEqluals(expr, exprs[0])) {
+                if (!expr.equals(exprs[0])) {
+                    core.rprint("Error: Type mismatch in binary operator: expected {any}, got {any}\n", .{ exprs[0], expr });
                     return error.TypeMismatch;
                 }
             }
@@ -213,14 +205,4 @@ fn inferType(self: *Semantic, node: Node) !primitive.Type {
             return .DebugVal;
         },
     }
-}
-
-fn typeEqluals(self: *Semantic, left: primitive.Type, right: primitive.Type) bool {
-    _ = self;
-    if (left == .ComptimeInt or left == .ComptimeFloat or right == .ComptimeInt or right == .ComptimeFloat) {
-        // Include casts from comptime_int/float to u/i/f that can contain it
-        return true;
-    }
-
-    return left.toInt() == right.toInt();
 }

@@ -73,8 +73,7 @@ inline fn isAtEnd(self: *Parser) bool {
 
 fn checkEof(self: *Parser) !void {
     if (self.isAtEnd()) {
-        self.reportError("Unexpected end of file\n", .{}) catch {};
-        return Error.UnexpectedEof;
+        return self.reportError("Unexpected end of file\n", .{});
     }
 }
 
@@ -99,7 +98,7 @@ fn expectOneOf(self: *Parser, comptime kinds: anytype) !Token {
     return token;
 }
 
-fn expect(self: *Parser, comptime kind: Token.Kind) !Token {
+inline fn expect(self: *Parser, comptime kind: Token.Kind) !Token {
     return self.expectOneOf(.{kind});
 }
 
@@ -124,17 +123,18 @@ inline fn nodesFromTuple(self: *Parser, tuple: anytype) ![]Node {
     return nodeList;
 }
 
-fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) error{UnexpectedToken} {
+fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) error{ UnexpectedEof, UnexpectedToken } {
     self.success = false;
     const len = self.buffer.len;
     const token = if (self.isAtEnd()) Token{ .kind = .Invalid, .start = len, .end = len } else self.peek();
+    const err = if (self.isAtEnd()) error.UnexpectedEof else error.UnexpectedToken;
 
     const line_info = token.lineInfo(self.buffer);
     const column_number = token.start - line_info.start;
     const line = core.getLine(self.buffer, line_info.start, token.start, len);
 
     core.printSourceLine(fmt, args, self.file_path, line_info.number, column_number, line, token.len());
-    return error.UnexpectedToken;
+    return err;
 }
 
 fn parseDeclaration(self: *Parser) !Node {
@@ -143,9 +143,9 @@ fn parseDeclaration(self: *Parser) !Node {
     _ = try self.expect(.Identifier);
 
     var type_identifier_index: ?usize = null;
-    const token = switch (declaration.kind) {
-        .Const => try self.expectOneOf(.{ .Colon, .Equals }),
-        .Var => try self.expectOneOf(.{ .Colon, .ColonEquals }),
+    const token, const kind = switch (declaration.kind) {
+        .Const => .{ try self.expectOneOf(.{ .Colon, .Equals }), Node.Kind.ConstDeclaration },
+        .Var => .{ try self.expectOneOf(.{ .Colon, .ColonEquals }), Node.Kind.VarDeclaration },
         else => unreachable,
     };
     if (token.kind == .Colon) {
@@ -161,12 +161,6 @@ fn parseDeclaration(self: *Parser) !Node {
         makeLeaf(.TypeIdentifier, type_identifier_index),
         expr_node,
     });
-
-    const kind: Node.Kind = switch (declaration.kind) {
-        .Const => .ConstDeclaration,
-        .Var => .VarDeclaration,
-        else => unreachable,
-    };
     return Node{ .kind = kind, .children = children };
 }
 
@@ -241,23 +235,7 @@ fn parseInfixOrSuffix(self: *Parser, left: Node) !Node {
 fn printAst(self: *Parser) void {
     core.dprint("AST:\n", .{});
     for (self.ast.items) |node| {
-        self.printAstNode(node, 0);
+        node.dprint(self.buffer, self.tokens, 0);
     }
     core.dprint("\n", .{});
-}
-
-fn printAstNode(self: *Parser, node: Node, depth: usize) void {
-    for (0..depth) |_| {
-        core.dprint("  ", .{});
-    }
-    core.dprint("{any} (token_index={any})", .{ node.kind, node.token_index });
-    const token = node.token(self.tokens);
-    if (token) |t| {
-        core.dprint(" (token.kind={any}) (token.string=\"{s}\")", .{ t.kind, t.string(self.buffer) });
-    }
-    core.dprint("\n", .{});
-
-    for (node.children) |child| {
-        self.printAstNode(child, depth + 1);
-    }
 }

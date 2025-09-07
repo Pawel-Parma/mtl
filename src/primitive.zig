@@ -1,34 +1,72 @@
 const std = @import("std");
 
 pub const Type = enum {
-    I8, I16, I32, I64, I128,
-    U8, U16, U32, U64, U128,
-    F16, F32, F64, F80, F128,
-    Type, ComptimeInt, ComptimeFloat, 
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    F16,
+    F32,
+    F64,
+    F80,
+    F128,
+    ComptimeInt,
+    ComptimeFloat,
+    Bool,
+    Void,
+    Type,
     DebugVal,
 
     pub inline fn toInt(self: Type) u8 {
         return @intFromEnum(self);
     }
-};
 
-pub const entries = [_]struct {
-    name: []const u8,
-    kind: Type,
-}{
-    .{ .name = "i8", .kind = .I8 },     .{ .name = "i16", .kind = .I16 },                  .{ .name = "i32", .kind = .I32 },
-    .{ .name = "i64", .kind = .I64 },   .{ .name = "i128", .kind = .I128 },                .{ .name = "u8", .kind = .U8 },
-    .{ .name = "u16", .kind = .U16 },   .{ .name = "u32", .kind = .U32 },                  .{ .name = "u64", .kind = .U64 },
-    .{ .name = "u128", .kind = .U128 }, .{ .name = "f16", .kind = .F16 },                  .{ .name = "f32", .kind = .F32 },
-    .{ .name = "f64", .kind = .F64 },   .{ .name = "f80", .kind = .F80 },                  .{ .name = "f128", .kind = .F128 },
-    .{ .name = "type", .kind = .Type }, .{ .name = "comptime_int", .kind = .ComptimeInt }, .{ .name = "comptime_float", .kind = .ComptimeFloat },
-};
-
-pub inline fn lookup(type_name: []const u8) ?Type {
-    inline for (entries) |entry| {
-        if (std.mem.eql(u8, type_name, entry.name)) return entry.kind;
+    pub fn equals(left: Type, right: Type) bool {
+        if (left == .ComptimeInt or left == .ComptimeFloat or right == .ComptimeInt or right == .ComptimeFloat) {
+            const it: [2][2]Type = .{ .{ left, right }, .{ right, left } };
+            for (it) |pair| {
+                const s1 = pair[0];
+                const s2 = pair[1];
+                // TODO: add check if the number can fit inside the type
+                switch (s1) {
+                    .ComptimeInt => switch (s2) {
+                        .ComptimeInt, .ComptimeFloat => return true,
+                        .I8, .I16, .I32, .I64, .I128 => return true,
+                        .U8, .U16, .U32, .U64, .U128 => return true,
+                        .F16, .F32, .F64, .F80, .F128 => return true,
+                        else => return false,
+                    },
+                    // TODO: when type is N.0... make it a comptime_int
+                    .ComptimeFloat => {
+                        switch (s2) {
+                            .ComptimeFloat => return true,
+                            .F16, .F32, .F64, .F80, .F128 => return true,
+                            else => return false,
+                        }
+                    },
+                    else => {},
+                }
+            }
+        }
+        return left.toInt() == right.toInt();
     }
-    return null;
+};
+
+pub const entries: std.StaticStringMap(Type) = .initComptime([_]struct { []const u8, Type }{
+    .{ "i8", .I8 },                    .{ "i16", .I16 },                      .{ "i32", .I32 },   .{ "i64", .I64 },   .{ "i128", .I128 },
+    .{ "u8", .U8 },                    .{ "u16", .U16 },                      .{ "u32", .U32 },   .{ "u64", .U64 },   .{ "u128", .U128 },
+    .{ "f16", .F16 },                  .{ "f32", .F32 },                      .{ "f64", .F64 },   .{ "f80", .F80 },   .{ "f128", .F128 },
+    .{ "comptime_int", .ComptimeInt }, .{ "comptime_float", .ComptimeFloat }, .{ "bool", .Bool }, .{ "type", .Type }, .{ "void", .Void },
+});
+
+pub fn lookup(type_name: []const u8) ?Type {
+    return entries.get(type_name);
 }
 
 pub fn isPrimitiveType(type_name: []const u8) bool {
