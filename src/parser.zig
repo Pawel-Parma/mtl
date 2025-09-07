@@ -5,63 +5,60 @@ const Token = @import("token.zig");
 const Node = @import("node.zig");
 
 const Parser = @This();
-allocator: std.mem.Allocator,
+arena: std.heap.ArenaAllocator,
 buffer: []const u8,
 file_path: []const u8,
 tokens: []const Token,
 current: usize,
-success_state: Error!void,
+success: bool,
 ast: std.ArrayList(Node),
-// TODO: refactor
-// TODO: add nice error messages, everywhere
 
 pub const Error = error{
     UnexpectedToken,
+    UnexpectedEof,
+    ParsingFailed,
 } || std.mem.Allocator.Error;
 
 pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const u8, tokens: []const Token) Parser {
     return .{
-        .allocator = allocator,
+        .arena = .init(allocator),
         .buffer = buffer,
         .file_path = file_path,
         .tokens = tokens,
         .current = 0,
-        .success_state = void{},
+        .success = true,
         .ast = .empty,
     };
 }
 
-pub fn deinit(self: *Parser) !void {
-    while (self.ast.items.len > 0) {
-        var node = self.ast.pop().?;
-        for (node.children.items) |child| {
-            try self.ast.append(self.allocator, child);
-        }
-        node.children.deinit(self.allocator);
-    }
+pub fn deinit(self: *Parser) void {
+    self.arena.deinit();
 }
 
 pub fn parse(self: *Parser) Error!void {
+    const allocator = self.arena.allocator();
     const initialCapacity = @min(512, self.tokens.len / 2);
-    try self.ast.ensureTotalCapacity(self.allocator, initialCapacity);
+    try self.ast.ensureTotalCapacity(allocator, initialCapacity);
     while (!self.isAtEnd()) {
-        const node = self.parseNode() catch continue;
-        try self.ast.append(self.allocator, node);
+        const node = self.parseNode() catch {
+            self.synchronize();
+            continue;
+        };
+        try self.ast.append(allocator, node);
     }
-    if (self.success_state catch null != null) self.printAst();
-    return self.success_state;
+    if (!self.success) {
+        return Error.ParsingFailed;
+    }
+    self.printAst();
 }
 
 fn parseNode(self: *Parser) Error!Node {
+    try self.checkEof();
     const token = self.peek();
     return switch (token.kind) {
-        .Eol => blk: {
-            _ = self.advance();
-            break :blk self.parseNode();
-        },
         .Const, .Var => try self.parseDeclaration(),
         .CurlyLeft => try self.parseBlock(),
-        else => self.unexpectedToken(),
+        else => self.reportError("Expected statement\n", .{}),
     };
 }
 
@@ -70,156 +67,161 @@ inline fn advance(self: *Parser) usize {
     return self.current - 1;
 }
 
-inline fn peek(self: *Parser) Token {
-    if (self.isAtEnd()) {
-        core.rprint("Unexpected end of input\n", .{});
-        core.exit(200);
-    }
-    return self.tokens[self.current];
-}
-
 inline fn isAtEnd(self: *Parser) bool {
     return self.current >= self.tokens.len;
 }
 
-inline fn currentOneOf(self: *Parser, comptime kinds: anytype) !Token {
+fn checkEof(self: *Parser) !void {
+    if (self.isAtEnd()) {
+        self.reportError("Unexpected end of file\n", .{}) catch {};
+        return Error.UnexpectedEof;
+    }
+}
+
+inline fn peek(self: *Parser) Token {
+    return self.tokens[self.current];
+}
+
+fn match(self: *Parser, comptime kinds: anytype) !Token {
+    try self.checkEof();
     const token = self.peek();
     inline for (kinds) |kind| {
         if (token.kind == kind) {
             return token;
         }
     }
-    _ = self.unexpectedToken();
-    core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
-    return Error.UnexpectedToken;
+    return self.reportError("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
 }
 
-inline fn expect(self: *Parser, kind: Token.Kind) !Token {
-    const token = self.peek();
-    if (token.kind == kind) {
+fn expectOneOf(self: *Parser, comptime kinds: anytype) !Token {
+    const token = try self.match(kinds);
+    _ = self.advance();
+    return token;
+}
+
+fn expect(self: *Parser, comptime kind: Token.Kind) !Token {
+    return self.expectOneOf(.{kind});
+}
+
+fn synchronize(self: *Parser) void {
+    while (!self.isAtEnd() and !(self.peek().kind == .Eol or self.peek().kind == .CurlyRight)) {
         _ = self.advance();
-        return token;
     }
-    _ = self.unexpectedToken();
-    core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kind, token.kind });
-    return Error.UnexpectedToken;
+    if (!self.isAtEnd() and (self.peek().kind == .Eol or self.peek().kind == .CurlyRight)) {
+        _ = self.advance();
+    }
 }
 
-inline fn consumeOneOf(self: *Parser, comptime kinds: anytype) !Token {
-    const token = self.peek();
-    inline for (kinds) |kind| {
-        if (token.kind == kind) {
-            _ = self.advance();
-            return token;
-        }
-    }
-    _ = self.unexpectedToken();
-    core.rprint("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
-    return Error.UnexpectedToken;
+inline fn makeLeaf(kind: Node.Kind, token_index: ?usize) Node {
+    return Node{ .kind = kind, .children = &.{}, .token_index = token_index };
 }
 
-inline fn ArrayListFromTuple(self: *Parser, tuple: anytype) !std.ArrayList(Node) {
-    var list: std.ArrayList(Node) = try .initCapacity(self.allocator, tuple.len);
-    inline for (tuple) |item| {
-        try list.append(self.allocator, item);
+inline fn nodesFromTuple(self: *Parser, tuple: anytype) ![]Node {
+    const nodeList = try self.arena.allocator().alloc(Node, tuple.len);
+    inline for (tuple, 0..) |item, i| {
+        nodeList[i] = item;
     }
-    return list;
+    return nodeList;
+}
+
+fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) error{UnexpectedToken} {
+    self.success = false;
+    const len = self.buffer.len;
+    const token = if (self.isAtEnd()) Token{ .kind = .Invalid, .start = len, .end = len } else self.peek();
+
+    const line_info = token.lineInfo(self.buffer);
+    const column_number = token.start - line_info.start;
+    const line = core.getLine(self.buffer, line_info.start, token.start, len);
+
+    core.printSourceLine(fmt, args, self.file_path, line_info.number, column_number, line, token.len());
+    return error.UnexpectedToken;
 }
 
 fn parseDeclaration(self: *Parser) !Node {
-    const declaration_token_index = self.current;
-    const declaration_token = try self.consumeOneOf(.{ .Const, .Var });
+    const declaration = try self.expectOneOf(.{ .Var, .Const });
     const name_identifier_index = self.current;
     _ = try self.expect(.Identifier);
 
     var type_identifier_index: ?usize = null;
-    var expr_node: Node = undefined;
-    const curr = try self.currentOneOf(.{ .Colon, .ColonEquals, .Equals });
-    var assignment_kind = curr.kind;
-
-    if (curr.kind == .Colon) {
-        _ = try self.expect(.Colon);
+    const token = switch (declaration.kind) {
+        .Const => try self.expectOneOf(.{ .Colon, .Equals }),
+        .Var => try self.expectOneOf(.{ .Colon, .ColonEquals }),
+        else => unreachable,
+    };
+    if (token.kind == .Colon) {
         type_identifier_index = self.current;
         _ = try self.expect(.Identifier);
-        assignment_kind = self.peek().kind;
+        _ = try self.expect(.Equals);
     }
+    const expr_node = try self.parseExpression();
+    _ = try self.expect(.Eol);
 
-    if (declaration_token.kind == .Var and curr.kind == .Equals and assignment_kind == .Equals) {
-        _ = self.unexpectedToken();
-        core.rprint("Error: 'var' declarations must use ':=' for assignment when omitting type, not '='\n", .{});
-        return Error.UnexpectedToken;
-    }
-
-    if (declaration_token.kind == .Const and assignment_kind == .ColonEquals) {
-        _ = self.unexpectedToken();
-        core.rprint("Error: 'const' declarations must use '=' for assignment when omitting type, not ':='\n", .{});
-        return Error.UnexpectedToken;
-    }
-
-    if (assignment_kind == .ColonEquals or assignment_kind == .Equals) {
-        _ = try self.expect(assignment_kind);
-        expr_node = try self.parseExpression();
-        _ = try self.expect(.Eol);
-    }
-
-    const children = try self.ArrayListFromTuple(.{
-        Node{ .kind = .Keyword, .children = .empty, .token_index = declaration_token_index },
-        Node{ .kind = .Identifier, .children = .empty, .token_index = name_identifier_index },
-        Node{ .kind = .TypeIdentifier, .children = .empty, .token_index = type_identifier_index },
+    const children = try self.nodesFromTuple(.{
+        makeLeaf(.Identifier, name_identifier_index),
+        makeLeaf(.TypeIdentifier, type_identifier_index),
         expr_node,
     });
 
-    return Node{
-        .kind = .Declaration,
-        .children = children,
+    const kind: Node.Kind = switch (declaration.kind) {
+        .Const => .ConstDeclaration,
+        .Var => .VarDeclaration,
+        else => unreachable,
     };
+    return Node{ .kind = kind, .children = children };
 }
 
 fn parseBlock(self: *Parser) Error!Node {
     _ = try self.expect(.CurlyLeft);
-    var statements: std.ArrayList(Node) = try .initCapacity(self.allocator, 16);
-    while (self.peek().kind != .CurlyRight) {
-        const node = try self.parseNode();
-        try statements.append(self.allocator, node);
-    }
+    const statements = try self.parseNodesUntil(.CurlyRight);
     _ = try self.expect(.CurlyRight);
     return Node{ .kind = .Scope, .children = statements };
 }
 
+fn parseNodesUntil(self: *Parser, endKind: Token.Kind) ![]Node {
+    var list: std.ArrayList(Node) = .empty;
+    while (!self.isAtEnd() and self.peek().kind != endKind) {
+        const node = self.parseNode() catch {
+            self.synchronize();
+            continue;
+        };
+        try list.append(self.arena.allocator(), node);
+    }
+    return try list.toOwnedSlice(self.arena.allocator());
+}
+
 inline fn parseExpression(self: *Parser) !Node {
-    return try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+    // TODO: handle associativity
+    return self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
 }
 
 fn parseExpressionWithPrecedence(self: *Parser, precedence: Token.Precedence) Error!Node {
     var left = try self.parsePrefix();
-    while (precedence.toInt() < self.peek().precedence().toInt()) {
+    while (!self.isAtEnd() and precedence.toInt() < self.peek().precedence().toInt()) {
         left = try self.parseInfixOrSuffix(left);
     }
     return left;
 }
 
 fn parsePrefix(self: *Parser) !Node {
+    try self.checkEof();
     const token = self.peek();
-    const token_index = self.advance();
     switch (token.kind) {
-        .Identifier => return .{ .kind = .Identifier, .children = .empty, .token_index = token_index },
-        .IntLiteral, .FloatLiteral => return .{ .kind = .NumberLiteral, .children = .empty, .token_index = token_index },
+        .Identifier => return makeLeaf(.Identifier, self.advance()),
+        .IntLiteral, .FloatLiteral => return makeLeaf(.NumberLiteral, self.advance()),
         .ParenLeft => {
+            const token_index = self.advance();
             const expr = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
             _ = try self.expect(.ParenRight);
-            const children = try self.ArrayListFromTuple(.{expr});
+            const children = try self.nodesFromTuple(.{expr});
             return .{ .kind = .Expression, .children = children, .token_index = token_index };
         },
         .Minus => {
+            const token_index = self.advance();
             const expr = try self.parseExpressionWithPrecedence(Token.Precedence.Prefix);
-            const children = try self.ArrayListFromTuple(.{expr});
+            const children = try self.nodesFromTuple(.{expr});
             return .{ .kind = .UnaryOperator, .children = children, .token_index = token_index };
         },
-        else => {
-            _ = self.unexpectedToken();
-            core.rprint("Unexpected token in parsePrefix: {any}\n", .{token.kind});
-            return Error.UnexpectedToken;
-        },
+        else => return self.reportError("Unexpected prefix: {any}\n", .{token.kind}),
     }
 }
 
@@ -229,48 +231,11 @@ fn parseInfixOrSuffix(self: *Parser, left: Node) !Node {
     switch (token.kind) {
         .Plus, .Minus, .Star, .Slash => {
             const right = try self.parseExpressionWithPrecedence(token.precedence());
-            const children = try self.ArrayListFromTuple(.{ left, right });
+            const children = try self.nodesFromTuple(.{ left, right });
             return Node{ .kind = .BinaryOperator, .children = children, .token_index = token_index };
         },
-        else => {
-            return left;
-        },
+        else => return self.reportError("Unexpected infixOrSuffix: {any}\n", .{token.kind}),
     }
-}
-
-fn unexpectedToken(self: *Parser) Node {
-    self.success_state = Error.UnexpectedToken;
-    const token = self.peek();
-
-    var line_number: usize = 1;
-    var line_start: usize = 0;
-    for (self.buffer[0..token.start], 0..) |c, i| {
-        if (c == '\n') {
-            line_number += 1;
-            line_start = i + 1;
-        }
-    }
-    const column_number = token.start - line_start;
-    const line_end = std.mem.indexOfScalarPos(u8, self.buffer, token.start, '\n') orelse self.buffer.len;
-    const line = self.buffer[line_start..line_end];
-
-    core.printSourceLine(
-        "unexpected token",
-        self.file_path,
-        line_number,
-        column_number,
-        line,
-        token.end - token.start,
-    );
-    while (!self.isAtEnd() and (self.peek().kind == .Eol or self.peek().kind == .CurlyRight)) {
-        core.dprintn("Skping1");
-        _ = self.advance();
-    }
-    if (!self.isAtEnd()) {
-        core.dprintn("Skping1");
-        _ = self.advance();
-    }
-    return .{ .kind = .Invalid, .children = .empty, .token_index = null };
 }
 
 fn printAst(self: *Parser) void {
@@ -282,18 +247,17 @@ fn printAst(self: *Parser) void {
 }
 
 fn printAstNode(self: *Parser, node: Node, depth: usize) void {
-    var indent_buf: [32]u8 = undefined;
-    const indent = indent_buf[0..@min(depth * 2, indent_buf.len)];
-    for (indent) |*c| c.* = ' ';
-
+    for (0..depth) |_| {
+        core.dprint("  ", .{});
+    }
+    core.dprint("{any} (token_index={any})", .{ node.kind, node.token_index });
     const token = node.token(self.tokens);
     if (token) |t| {
-        core.dprint("{s}{any} (token_index={d}) (token.kind={any}) (token.text=\"{s}\")\n", .{ indent, node.kind, node.token_index.?, t.kind, t.string(self.buffer) });
-    } else {
-        core.dprint("{s}{any} (token_index=null)\n", .{ indent, node.kind });
+        core.dprint(" (token.kind={any}) (token.string=\"{s}\")", .{ t.kind, t.string(self.buffer) });
     }
+    core.dprint("\n", .{});
 
-    for (node.children.items) |child| {
+    for (node.children) |child| {
         self.printAstNode(child, depth + 1);
     }
 }

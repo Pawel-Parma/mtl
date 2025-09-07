@@ -5,8 +5,13 @@ const c: i32 = 123;
 b;
 var d: i32 = 21;
 var : = 21;
-b
+b;
 var c := +1;
 var e := c;
 111;
 var aaaa := +123; 
+var b = 21;
+const d := 12;
+const a = 1 +;
+const a =;
+const

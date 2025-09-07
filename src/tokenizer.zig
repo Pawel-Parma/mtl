@@ -10,11 +10,11 @@ file_path: []const u8,
 position: usize,
 line_number: usize,
 line_start: usize,
-success_state: Error!void,
+success: bool,
 tokens: std.ArrayList(Token),
 
 pub const Error = error{
-    TokenizeFailed,
+    TokenizingFailed,
 } || std.mem.Allocator.Error;
 
 pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const u8) Tokenizer {
@@ -25,7 +25,7 @@ pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const
         .position = 0,
         .line_number = 1,
         .line_start = 0,
-        .success_state = void{},
+        .success = true,
         .tokens = .empty,
     };
 }
@@ -41,8 +41,10 @@ pub fn tokenize(self: *Tokenizer) Error!void {
         const token = self.nextToken() orelse continue;
         try self.tokens.append(self.allocator, token);
     }
-    if (self.success_state catch null != null) self.printTokens();
-    return self.success_state;
+    if (!self.success) {
+        return Error.TokenizingFailed;
+    }
+    self.printTokens();
 }
 
 pub fn nextToken(self: *Tokenizer) ?Token {
@@ -157,23 +159,14 @@ fn identifierToken(self: *Tokenizer) Token {
 }
 
 fn unsupportedCharacter(self: *Tokenizer) Token {
-    self.success_state = Error.TokenizeFailed;
-
+    self.success = false;
     const len = std.unicode.utf8ByteSequenceLength(self.peek()) catch unreachable;
     self.position += len;
 
     const column_number = self.position - self.line_start - len;
-    const line_end = std.mem.indexOfScalarPos(u8, self.buffer, self.position, '\n') orelse self.buffer.len - self.position;
-    const line = self.buffer[self.line_start..line_end];
+    const line = core.getLine(self.buffer, self.line_start, self.position, self.buffer.len - self.position);
 
-    core.printSourceLine(
-        "encountered unsupported character",
-        self.file_path,
-        self.line_number,
-        column_number,
-        line,
-        1,
-    );
+    core.printSourceLine("encountered unsupported character\n", .{}, self.file_path, self.line_number, column_number, line, 1);
     return .{ .kind = .Invalid, .start = self.position - len, .end = self.position };
 }
 

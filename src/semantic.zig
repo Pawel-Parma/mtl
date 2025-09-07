@@ -69,7 +69,7 @@ fn semanticPass(self: *Semantic, node: Node, depth: usize) Error!void {
         core.dprint("{s}{any} (token_index=null)\n", .{ indent, node.kind });
     }
     switch (node.kind) {
-        .Declaration => try self.declaration(node, depth),
+        .VarDeclaration, .ConstDeclaration => try self.declaration(node, depth),
         .Scope => try self.scope(node, depth),
         else => self.unsupportedNode(node),
     }
@@ -86,10 +86,14 @@ fn isInScope(self: *Semantic, name: []const u8) ?*DeclarationMap {
 
 inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
     _ = depth;
-    const declaration_node = node.children.items[0];
-    const name_identifier_node = node.children.items[1];
-    const type_identifier_node = node.children.items[2];
-    const expr_node = node.children.items[3];
+    const declaration_kind: Token.Kind = switch (node.kind) {
+        .VarDeclaration => .Var,
+        .ConstDeclaration => .Const,
+        else => unreachable,
+    };
+    const name_identifier_node = node.children[0];
+    const type_identifier_node = node.children[1];
+    const expr_node = node.children[2];
 
     const name = name_identifier_node.token(self.tokens).?.string(self.buffer);
     if (primitive.isPrimitiveType(name)) {
@@ -106,7 +110,7 @@ inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
         }
     }
 
-    const kind: Declaration.Kind = switch (declaration_node.token(self.tokens).?.kind) {
+    const kind: Declaration.Kind = switch (declaration_kind) {
         .Var => .Var,
         .Const => .Const,
         else => unreachable,
@@ -146,7 +150,7 @@ inline fn declaration(self: *Semantic, node: Node, depth: usize) !void {
 
 inline fn scope(self: *Semantic, node: Node, depth: usize) Error!void {
     try self.scopes.append(self.allocator, .init(self.allocator));
-    for (node.children.items) |child| {
+    for (node.children) |child| {
         try self.semanticPass(child, depth + 1);
     }
     var last_scope = self.scopes.pop().?;
@@ -181,11 +185,11 @@ fn inferType(self: *Semantic, node: Node) !primitive.Type {
             return error.UndefinedIdentifier;
         },
         .UnaryOperator => {
-            return try self.inferType(node.children.items[0]);
+            return try self.inferType(node.children[0]);
         },
         .BinaryOperator => {
-            const left_type = try self.inferType(node.children.items[0]);
-            const right_type = try self.inferType(node.children.items[1]);
+            const left_type = try self.inferType(node.children[0]);
+            const right_type = try self.inferType(node.children[1]);
             if (!self.typeEqluals(left_type, right_type)) {
                 return error.TypeMismatch;
             }
@@ -193,7 +197,7 @@ fn inferType(self: *Semantic, node: Node) !primitive.Type {
         },
         .Expression => {
             var exprs: [64]primitive.Type = undefined;
-            for (node.children.items, 0..) |child, i| {
+            for (node.children, 0..) |child, i| {
                 exprs[i] = try self.inferType(child);
             }
             for (exprs) |expr| {
@@ -210,7 +214,6 @@ fn inferType(self: *Semantic, node: Node) !primitive.Type {
         },
     }
 }
-
 
 fn typeEqluals(self: *Semantic, left: primitive.Type, right: primitive.Type) bool {
     _ = self;

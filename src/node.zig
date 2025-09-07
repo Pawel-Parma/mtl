@@ -3,12 +3,11 @@ const Token = @import("token.zig");
 
 const Node = @This();
 kind: Kind,
-children: std.ArrayList(Node),
+// TODO: make children start end instead of slice
+children: []Node,
 token_index: ?usize = null,
 
 pub const Kind = enum {
-    Invalid,
-
     UnaryOperator,
     BinaryOperator,
 
@@ -18,7 +17,8 @@ pub const Kind = enum {
     TypeIdentifier,
 
     Keyword,
-    Declaration,
+    ConstDeclaration,
+    VarDeclaration,
 
     Expression,
 

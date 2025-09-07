@@ -37,15 +37,15 @@ pub fn main() !u8 {
     defer tokenizer.deinit();
     tokenizer.tokenize() catch |err| switch (err) {
         error.OutOfMemory => core.exitCode("Tokenization failed", .OutOfMemory),
-        error.TokenizeFailed => return 0,
+        else => return 0,
     };
     const tokens = tokenizer.tokens.items;
 
     var parser = Parser.init(allocator, file_buffer, file_path, tokens);
-    defer parser.deinit() catch core.exitCode("Parser deinitialization failed", .OutOfMemory);
+    defer parser.deinit();
     parser.parse() catch |err| switch (err) {
         error.OutOfMemory => core.exitCode("Parsing failed", .OutOfMemory),
-        error.UnexpectedToken => return 0,
+        else => return 0,
     };
     const ast = parser.ast;
 

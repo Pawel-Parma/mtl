@@ -52,7 +52,8 @@ pub inline fn redEnd() void {
 }
 
 pub fn printSourceLine(
-    message: []const u8,
+    comptime message: []const u8,
+    args: anytype,
     file_path: []const u8,
     line_number: usize,
     column: usize,
@@ -65,7 +66,7 @@ pub fn printSourceLine(
     redStart();
     rprint("error: ", .{});
     redEnd();
-    rprint("{s}\n", .{message});
+    rprint(message, args);
     rprint("    {s}\n", .{line});
     var spaces: [256]u8 = undefined;
     const space_count = @min(column, spaces.len);
@@ -85,4 +86,9 @@ pub fn readFileToBuffer(allocator: std.mem.Allocator, file_path: []const u8) ![]
     const buffer = try allocator.alloc(u8, file_size);
     _ = try file.readAll(buffer);
     return buffer;
+}
+
+pub fn getLine(buffer: []const u8, line_start: usize, start_index: usize, default: usize) []const u8 {
+    const line_end = std.mem.indexOfScalarPos(u8, buffer, start_index, '\n') orelse default;
+    return buffer[line_start..line_end];
 }
