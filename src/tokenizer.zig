@@ -30,10 +30,6 @@ pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const
     };
 }
 
-pub fn deinit(self: *Tokenizer) void {
-    self.tokens.deinit(self.allocator);
-}
-
 pub fn tokenize(self: *Tokenizer) Error!void {
     const initialCapacity = @min(512, self.buffer.len / 2);
     try self.tokens.ensureTotalCapacityPrecise(self.allocator, initialCapacity);
@@ -128,9 +124,15 @@ fn slashToken(self: *Tokenizer) ?Token {
 fn numberLiteralToken(self: *Tokenizer) Token {
     const start = self.position;
     var has_dot = false;
+    var is_float = false;
     while (!self.isAtEnd()) {
         switch (self.peek()) {
-            '0'...'9', '_' => _ = self.advance(),
+            '0'...'9', '_' => {
+                _ = self.advance();
+                if (has_dot) {
+                    is_float = true;
+                }
+            },
             '.' => {
                 if (!has_dot) {
                     _ = self.advance();
@@ -144,7 +146,7 @@ fn numberLiteralToken(self: *Tokenizer) Token {
             else => break,
         }
     }
-    const kind: Token.Kind = if (has_dot) .FloatLiteral else .IntLiteral;
+    const kind: Token.Kind = if (is_float) .FloatLiteral else .IntLiteral;
     return .{ .kind = kind, .start = start, .end = self.position };
 }
 
@@ -160,7 +162,7 @@ fn identifierToken(self: *Tokenizer) Token {
 
 fn unsupportedCharacter(self: *Tokenizer) Token {
     self.success = false;
-    const len = std.unicode.utf8ByteSequenceLength(self.peek()) catch unreachable;
+    const len = std.unicode.utf8ByteSequenceLength(self.peek()) catch 1;
     self.position += len;
 
     const column_number = self.position - self.line_start - len;

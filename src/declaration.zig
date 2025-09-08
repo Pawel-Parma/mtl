@@ -1,4 +1,14 @@
 const std = @import("std");
+const Node = @import("node.zig");
+
+kind: Kind,
+symbol_type: Type,
+expr: ?Node,
+
+pub const Kind = enum {
+    Var,
+    Const,
+};
 
 pub const Type = enum {
     I8,
@@ -6,21 +16,28 @@ pub const Type = enum {
     I32,
     I64,
     I128,
+
     U8,
     U16,
     U32,
     U64,
     U128,
+
     F16,
     F32,
     F64,
     F80,
     F128,
+
     ComptimeInt,
     ComptimeFloat,
+
     Bool,
+
     Void,
+
     Type,
+
     DebugVal,
 
     pub inline fn toInt(self: Type) u8 {
@@ -42,7 +59,6 @@ pub const Type = enum {
                         .F16, .F32, .F64, .F80, .F128 => return true,
                         else => return false,
                     },
-                    // TODO: when type is N.0... make it a comptime_int
                     .ComptimeFloat => {
                         switch (s2) {
                             .ComptimeFloat => return true,
@@ -56,19 +72,18 @@ pub const Type = enum {
         }
         return left.toInt() == right.toInt();
     }
+
+    pub const entries: std.StaticStringMap(Type) = .initComptime([_]struct { []const u8, Type }{
+        .{ "i8", .I8 },                    .{ "i16", .I16 },                      .{ "i32", .I32 },   .{ "i64", .I64 },   .{ "i128", .I128 },
+        .{ "u8", .U8 },                    .{ "u16", .U16 },                      .{ "u32", .U32 },   .{ "u64", .U64 },   .{ "u128", .U128 },
+        .{ "f16", .F16 },                  .{ "f32", .F32 },                      .{ "f64", .F64 },   .{ "f80", .F80 },   .{ "f128", .F128 },
+        .{ "comptime_int", .ComptimeInt }, .{ "comptime_float", .ComptimeFloat }, .{ "bool", .Bool }, .{ "type", .Type }, .{ "void", .Void },
+    });
+    pub fn lookup(type_name: []const u8) ?Type {
+        return entries.get(type_name);
+    }
+
+    pub fn isPrimitiveType(type_name: []const u8) bool {
+        return lookup(type_name) != null;
+    }
 };
-
-pub const entries: std.StaticStringMap(Type) = .initComptime([_]struct { []const u8, Type }{
-    .{ "i8", .I8 },                    .{ "i16", .I16 },                      .{ "i32", .I32 },   .{ "i64", .I64 },   .{ "i128", .I128 },
-    .{ "u8", .U8 },                    .{ "u16", .U16 },                      .{ "u32", .U32 },   .{ "u64", .U64 },   .{ "u128", .U128 },
-    .{ "f16", .F16 },                  .{ "f32", .F32 },                      .{ "f64", .F64 },   .{ "f80", .F80 },   .{ "f128", .F128 },
-    .{ "comptime_int", .ComptimeInt }, .{ "comptime_float", .ComptimeFloat }, .{ "bool", .Bool }, .{ "type", .Type }, .{ "void", .Void },
-});
-
-pub fn lookup(type_name: []const u8) ?Type {
-    return entries.get(type_name);
-}
-
-pub fn isPrimitiveType(type_name: []const u8) bool {
-    return lookup(type_name) != null;
-}

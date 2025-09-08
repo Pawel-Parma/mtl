@@ -5,7 +5,7 @@ const Token = @import("token.zig");
 const Node = @import("node.zig");
 
 const Parser = @This();
-arena: std.heap.ArenaAllocator,
+allocator: std.mem.Allocator,
 buffer: []const u8,
 file_path: []const u8,
 tokens: []const Token,
@@ -21,7 +21,7 @@ pub const Error = error{
 
 pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const u8, tokens: []const Token) Parser {
     return .{
-        .arena = .init(allocator),
+        .allocator = allocator,
         .buffer = buffer,
         .file_path = file_path,
         .tokens = tokens,
@@ -31,20 +31,15 @@ pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const
     };
 }
 
-pub fn deinit(self: *Parser) void {
-    self.arena.deinit();
-}
-
 pub fn parse(self: *Parser) Error!void {
-    const allocator = self.arena.allocator();
     const initialCapacity = @min(512, self.tokens.len / 2);
-    try self.ast.ensureTotalCapacity(allocator, initialCapacity);
+    try self.ast.ensureTotalCapacity(self.allocator, initialCapacity);
     while (!self.isAtEnd()) {
         const node = self.parseNode() catch {
             self.synchronize();
             continue;
         };
-        try self.ast.append(allocator, node);
+        try self.ast.append(self.allocator, node);
     }
     if (!self.success) {
         return Error.ParsingFailed;
@@ -116,7 +111,7 @@ inline fn makeLeaf(kind: Node.Kind, token_index: ?usize) Node {
 }
 
 inline fn nodesFromTuple(self: *Parser, tuple: anytype) ![]Node {
-    const nodeList = try self.arena.allocator().alloc(Node, tuple.len);
+    const nodeList = try self.allocator.alloc(Node, tuple.len);
     inline for (tuple, 0..) |item, i| {
         nodeList[i] = item;
     }
@@ -178,9 +173,9 @@ fn parseNodesUntil(self: *Parser, endKind: Token.Kind) ![]Node {
             self.synchronize();
             continue;
         };
-        try list.append(self.arena.allocator(), node);
+        try list.append(self.allocator, node);
     }
-    return try list.toOwnedSlice(self.arena.allocator());
+    return try list.toOwnedSlice(self.allocator);
 }
 
 inline fn parseExpression(self: *Parser) !Node {
@@ -201,7 +196,8 @@ fn parsePrefix(self: *Parser) !Node {
     const token = self.peek();
     switch (token.kind) {
         .Identifier => return makeLeaf(.Identifier, self.advance()),
-        .IntLiteral, .FloatLiteral => return makeLeaf(.NumberLiteral, self.advance()),
+        .IntLiteral => return makeLeaf(.IntLiteral, self.advance()),
+        .FloatLiteral => return makeLeaf(.FloatLiteral, self.advance()),
         .ParenLeft => {
             const token_index = self.advance();
             const expr = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);

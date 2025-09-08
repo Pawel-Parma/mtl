@@ -12,7 +12,8 @@ pub const Kind = enum {
     UnaryOperator,
     BinaryOperator,
 
-    NumberLiteral,
+    IntLiteral,
+    FloatLiteral,
 
     Identifier,
     TypeIdentifier,
