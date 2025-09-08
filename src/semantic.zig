@@ -14,9 +14,7 @@ scopes: std.ArrayList(std.StringHashMap(Declaration)),
 depth: usize,
 // TODO: refactor
 
-pub const Error = error{
-    
-} || std.mem.Allocator.Error;
+pub const Error = error{} || std.mem.Allocator.Error;
 
 pub fn init(allocator: std.mem.Allocator, buffer: []const u8, tokens: []const Token, ast: std.ArrayList(Node)) Semantic {
     return .{
@@ -85,7 +83,13 @@ fn declarationNode(self: *Semantic, node: Node) !void {
         if (!Declaration.Type.isPrimitiveType(type_name)) {
             if (self.isInScope(type_name)) |scope_map| {
                 const decl = scope_map.get(type_name).?;
-                symbol_type = decl.symbol_type;
+                const decl_string = decl.expr.?.token(self.tokens).?.string(self.buffer);
+                if (Declaration.Type.isPrimitiveType(decl_string)) {
+                    symbol_type = Declaration.Type.lookup(decl_string).?;
+                } else {
+                    // TODO: refers to user defined type, add when user defined types beome a thing
+                    self.reportError("Type alias '{s}' does not refer to a primitive type\n", .{type_name});
+                }
             } else {
                 self.reportError("Unknown type '{s}'\n", .{type_name});
             }
@@ -143,8 +147,8 @@ fn inferType(self: *Semantic, node: Node) Declaration.Type {
             self.reportError("Type mismatch in binary operator: expected {any}, got {any}", .{ left_type, right_type });
         },
         .Identifier => {
-            if (Declaration.Type.lookup(name)) |t| {
-                return t;
+            if (Declaration.Type.lookup(name)) |_| {
+                return .Type;
             }
             if (self.isInScope(name)) |scope| {
                 return scope.get(name).?.symbol_type;
