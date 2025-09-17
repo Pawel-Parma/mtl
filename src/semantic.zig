@@ -11,7 +11,6 @@ buffer: []const u8,
 tokens: []const Token,
 ast: std.ArrayList(Node),
 scopes: std.ArrayList(std.StringHashMap(Declaration)),
-depth: usize,
 // TODO: refactor
 
 pub const Error = error{} || std.mem.Allocator.Error;
@@ -23,36 +22,51 @@ pub fn init(allocator: std.mem.Allocator, buffer: []const u8, tokens: []const To
         .tokens = tokens,
         .ast = ast,
         .scopes = .empty,
-        .depth = 0,
     };
 }
 
 pub fn analyze(self: *Semantic) !void {
-    try self.scopes.append(self.allocator, std.StringHashMap(Declaration).init(self.allocator));
-    // TODO: make global scope lazly analized
+    try self.scopes.append(self.allocator, .init(self.allocator));
+    // TODO: make global scope lazily analyzed
     for (self.ast.items) |node| {
         try self.semanticPass(node);
     }
-    return;
 }
 
 fn semanticPass(self: *Semantic, node: Node) Error!void {
     switch (node.kind) {
-        .VarDeclaration, .ConstDeclaration => try self.declarationNode(node),
+        .Declaration => try self.declarationNode(node),
         .Scope => try self.scopeNode(node),
-        else => self.reportError("Unsupported node in semanticPass: {any}", .{node}),
+        else => self.reportError(node, "Unsupported node in semanticPass: {any}", .{node}),
     }
 }
 
-fn reportError(self: *Semantic, comptime fmt: []const u8, args: anytype) noreturn {
-    _ = self;
+fn reportError(self: *Semantic, node: Node, comptime fmt: []const u8, args: anytype) noreturn {
+    // TODO: print errors
+    const len = self.buffer.len;
+    const token = node.token(self.tokens) orelse {
+        core.printSourceLine(fmt, args, "mtl/semantic.zig", 0, 0, "EOF", 3);
+        core.rprint("Error: ", .{});
+        core.rprint(fmt, args);
+        core.rprint("\n", .{});
+        const n: ?u8 = null;
+        const ni = n.? + 1;
+        _ = ni;
+        core.exit(99);
+    };
+
+    const line_info = token.lineInfo(self.buffer);
+    const column_number = token.start - line_info.start;
+    const line = core.getLine(self.buffer, line_info.start, token.start, len);
+   
+    core.printSourceLine(fmt, args, "mtl/semantic.zig", line_info.number, column_number, line, token.len());
     core.rprint("Error: ", .{});
     core.rprint(fmt, args);
     core.rprint("\n", .{});
     core.exit(99);
 }
 
-fn isInScope(self: *Semantic, name: []const u8) ?*std.StringHashMap(Declaration) {
+fn scopeOf(self: *Semantic, name: []const u8) ?*std.StringHashMap(Declaration) {
     for (self.scopes.items) |*scope_map| {
         if (scope_map.contains(name)) {
             return scope_map;
@@ -61,82 +75,58 @@ fn isInScope(self: *Semantic, name: []const u8) ?*std.StringHashMap(Declaration)
     return null;
 }
 
+inline fn isInScope(self: *Semantic, name: []const u8) bool {
+    return self.scopeOf(name) != null;
+}
+
 fn declarationNode(self: *Semantic, node: Node) !void {
-    const name = node.children[0].token(self.tokens).?.string(self.buffer);
-    if (Declaration.Type.isPrimitiveType(name)) {
-        self.reportError("Cannot declare variable '{s}', shadows primitive type", .{name});
+    const identifier = node.children[1].token(self.tokens).?;
+    const identifier_name = identifier.string(self.buffer);
+    if (Declaration.Type.isPrimitive(identifier_name)) {
+        self.reportError(node, "Cannot declare variable '{s}', shadows primitive type", .{identifier_name});
     }
-    var i = self.scopes.items.len;
-    while (i > 1) : (i -= 1) {
-        if (self.scopes.items[i - 2].contains(name)) {
-            self.reportError("Shadowing of '{s}' from outer scope is not allowed\n", .{name});
-        }
+    if (self.isInScope(identifier_name)) {
+        self.reportError(node, "Shadowing of '{s}' from outer scope is not allowed\n", .{identifier_name});
     }
 
-    const expr_node = node.children[2];
-    const expr_type = self.inferType(expr_node);
-    var symbol_type: ?Declaration.Type = null;
-    const type_identifier_node = node.children[1];
-    if (type_identifier_node.token_index) |_| {
-        const token = type_identifier_node.token(self.tokens).?;
-        const type_name = token.string(self.buffer);
-        if (!Declaration.Type.isPrimitiveType(type_name)) {
-            if (self.isInScope(type_name)) |scope_map| {
-                const decl = scope_map.get(type_name).?;
-                const decl_string = decl.expr.?.token(self.tokens).?.string(self.buffer);
-                if (Declaration.Type.isPrimitiveType(decl_string)) {
-                    symbol_type = Declaration.Type.lookup(decl_string).?;
-                } else {
-                    // TODO: refers to user defined type, add when user defined types beome a thing
-                    self.reportError("Type alias '{s}' does not refer to a primitive type\n", .{type_name});
-                }
-            } else {
-                self.reportError("Unknown type '{s}'\n", .{type_name});
-            }
-        } else {
-            symbol_type = Declaration.Type.lookup(type_name).?;
-        }
-    } else {
-        symbol_type = expr_type;
-    }
+    const declaration = node.children[0];
+    const type_node = node.children[2];
+    const expression = node.children[3];
+    const expression_type = self.inferType(expression);
+    const declared_type: Declaration.Type = if (type_node.token_index) |_| self.resolveType(type_node) else expression_type;
 
-    if (!symbol_type.?.equals(expr_type)) {
-        self.reportError("Type mismatch in declaration of '{s}': expected {any}, got {any}\n", .{ name, symbol_type, expr_type });
+    if (!declared_type.equals(expression_type)) {
+        self.reportError(node, "Type mismatch in declaration of '{s}': expected {any}, got {any}\n", .{ identifier_name, declared_type, expression_type });
     }
 
     var current_scope = &self.scopes.items[self.scopes.items.len - 1];
-    try current_scope.put(name, .{
-        .kind = switch (node.kind) {
-            .VarDeclaration => .Var,
-            .ConstDeclaration => .Const,
-            else => unreachable,
-        },
-        .symbol_type = symbol_type.?,
-        .expr = expr_node,
+    const kind: Declaration.Kind = if (declaration.token(self.tokens).?.kind == .Const) .Const else .Var;
+    try current_scope.put(identifier_name, .{
+        .kind = kind,
+        .symbol_type = declared_type,
+        .expr = expression,
     });
 }
 
 fn scopeNode(self: *Semantic, node: Node) Error!void {
     try self.scopes.append(self.allocator, .init(self.allocator));
     for (node.children) |child| {
-        self.depth += 1;
         try self.semanticPass(child);
     }
     var last_scope = self.scopes.pop().?;
     last_scope.deinit();
-    self.depth -= 1;
 }
 
 fn inferType(self: *Semantic, node: Node) Declaration.Type {
-    const token = node.token(self.tokens).?;
-    const name = token.string(self.buffer);
+    const name = node.string(self.buffer, self.tokens);
     switch (node.kind) {
-        .IntLiteral, .FloatLiteral => |literal| return switch (literal) {
-            .IntLiteral => .ComptimeInt,
-            .FloatLiteral => .ComptimeFloat,
-            else => unreachable,
+        .IntLiteral => return .ComptimeInt,
+        .FloatLiteral => return .ComptimeFloat,
+        .UnaryOperator => {
+            const child_type = self.inferType(node.children[0]);
+            // TODO: add operator validation
+            return child_type;
         },
-        .UnaryOperator => return self.inferType(node.children[0]), // TODO: add operator validation
         .BinaryOperator => {
             const left_type = self.inferType(node.children[0]);
             const right_type = self.inferType(node.children[1]);
@@ -144,27 +134,47 @@ fn inferType(self: *Semantic, node: Node) Declaration.Type {
                 // TODO: add operator validation
                 return left_type;
             }
-            self.reportError("Type mismatch in binary operator: expected {any}, got {any}", .{ left_type, right_type });
+            self.reportError(node, "Type mismatch in binary operator: expected {any}, got {any}", .{ left_type, right_type });
         },
         .Identifier => {
-            if (Declaration.Type.lookup(name)) |_| {
+            if (Declaration.Type.isPrimitive(name)) {
                 return .Type;
             }
-            if (self.isInScope(name)) |scope| {
+            if (self.scopeOf(name)) |scope| {
                 return scope.get(name).?.symbol_type;
             }
-            self.reportError("Undefined identifier '{s}'", .{name});
+            self.reportError(node, "Undefined identifier '{s}'", .{name});
         },
         .Expression => {
             const first_expr_type = self.inferType(node.children[0]);
             for (node.children) |expr| {
                 const expr_type = self.inferType(expr);
                 if (!first_expr_type.equals(expr_type)) {
-                    self.reportError("Type mismatch in binary operator: expected {any}, got {any}", .{ first_expr_type, expr_type });
+                    self.reportError(node, "Type mismatch in expression: expected {any}, got {any}", .{ first_expr_type, expr_type });
                 }
             }
             return first_expr_type;
         },
-        else => self.reportError("Unsupported node kind for inferType: {any}", .{node}),
+        else => self.reportError(node, "Unsupported node kind for inferType: {any}", .{node}),
+    }
+}
+
+fn resolveType(self: *Semantic, type_node: Node) Declaration.Type {
+    const type_name = type_node.string(self.buffer, self.tokens);
+    if (Declaration.Type.lookup(type_name)) |t| {
+        return t;
+    } else {
+        if (self.scopeOf(type_name)) |scope_map| {
+            const declaration = scope_map.get(type_name).?;
+            const declaration_name = declaration.expr.?.string(self.buffer, self.tokens);
+            if (Declaration.Type.lookup(declaration_name)) |t| {
+                return t;
+            } else {
+                // TODO: refers to user defined type, add when user defined types beome a thing
+                self.reportError(type_node, "Type alias '{s}' does not refer to a primitive type\n", .{type_name});
+            }
+        } else {
+            self.reportError(type_node, "Unknown type '{s}'\n", .{type_name});
+        }
     }
 }

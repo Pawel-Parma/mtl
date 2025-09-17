@@ -83,7 +83,7 @@ pub const Type = enum {
         return entries.get(type_name);
     }
 
-    pub fn isPrimitiveType(type_name: []const u8) bool {
+    pub fn isPrimitive(type_name: []const u8) bool {
         return lookup(type_name) != null;
     }
 };

@@ -133,14 +133,15 @@ fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) error{ Un
 }
 
 fn parseDeclaration(self: *Parser) !Node {
+    const declaration_index = self.current;
     const declaration = try self.expectOneOf(.{ .Var, .Const });
     const name_identifier_index = self.current;
     _ = try self.expect(.Identifier);
 
     var type_identifier_index: ?usize = null;
-    const token, const kind = switch (declaration.kind) {
-        .Const => .{ try self.expectOneOf(.{ .Colon, .Equals }), Node.Kind.ConstDeclaration },
-        .Var => .{ try self.expectOneOf(.{ .Colon, .ColonEquals }), Node.Kind.VarDeclaration },
+    const token = switch (declaration.kind) {
+        .Const =>  try self.expectOneOf(.{ .Colon, .Equals }),
+        .Var =>  try self.expectOneOf(.{ .Colon, .ColonEquals }),
         else => unreachable,
     };
     if (token.kind == .Colon) {
@@ -148,15 +149,16 @@ fn parseDeclaration(self: *Parser) !Node {
         _ = try self.expect(.Identifier);
         _ = try self.expect(.Equals);
     }
-    const expr_node = try self.parseExpression();
+    const expression= try self.parseExpression();
     _ = try self.expect(.Eol);
 
     const children = try self.nodesFromTuple(.{
+        makeLeaf(.Keyword, declaration_index),
         makeLeaf(.Identifier, name_identifier_index),
         makeLeaf(.TypeIdentifier, type_identifier_index),
-        expr_node,
+        expression,
     });
-    return Node{ .kind = kind, .children = children };
+    return Node{ .kind = .Declaration, .children = children };
 }
 
 fn parseBlock(self: *Parser) Error!Node {
