@@ -47,21 +47,19 @@ pub const Type = enum {
         if (left == .ComptimeInt or left == .ComptimeFloat or right == .ComptimeInt or right == .ComptimeFloat) {
             const it: [2][2]Type = .{ .{ left, right }, .{ right, left } };
             for (it) |pair| {
-                const s1 = pair[0];
-                const s2 = pair[1];
+                const s1, const s2 = pair;
                 // TODO: add check if the number can fit inside the type
                 switch (s1) {
                     .ComptimeInt => switch (s2) {
-                        .ComptimeInt, .ComptimeFloat => return true,
-                        .I8, .I16, .I32, .I64, .I128 => return true,
-                        .U8, .U16, .U32, .U64, .U128 => return true,
+                        .ComptimeInt, .ComptimeFloat,
+                        .I8, .I16, .I32, .I64, .I128, 
+                        .U8, .U16, .U32, .U64, .U128,
                         .F16, .F32, .F64, .F80, .F128 => return true,
                         else => return false,
                     },
                     .ComptimeFloat => {
                         switch (s2) {
-                            .ComptimeFloat => return true,
-                            .F16, .F32, .F64, .F80, .F128 => return true,
+                            .ComptimeFloat, .F16, .F32, .F64, .F80, .F128 => return true,
                             else => return false,
                         }
                     },

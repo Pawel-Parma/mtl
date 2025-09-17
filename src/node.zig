@@ -4,7 +4,6 @@ const Token = @import("token.zig");
 
 const Node = @This();
 kind: Kind,
-// TODO: make children start end instead of slice
 children: []Node,
 token_index: ?usize = null,
 

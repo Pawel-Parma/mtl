@@ -11,7 +11,6 @@ buffer: []const u8,
 tokens: []const Token,
 ast: std.ArrayList(Node),
 scopes: std.ArrayList(std.StringHashMap(Declaration)),
-// TODO: refactor
 
 pub const Error = error{} || std.mem.Allocator.Error;
 
@@ -176,8 +175,14 @@ fn resolveType(self: *Semantic, type_node: Node) Declaration.Type {
             const declaration_name = declaration.expr.?.string(self.buffer, self.tokens);
             if (Declaration.Type.lookup(declaration_name)) |t| {
                 return t;
+            } else if (self.scopeOf(declaration_name)) |scope| {
+                const inner_declaration = scope.get(declaration_name).?;
+                const inner_declaration_name = inner_declaration.expr.?.string(self.buffer, self.tokens);
+                if (Declaration.Type.lookup(inner_declaration_name)) |t| {
+                    return t;
+                }
+                self.reportError(type_node, "Type alias '{s}' does not refer to a primitive type\n", .{inner_declaration_name});
             } else {
-                // TODO: refers to user defined type, add when user defined types beome a thing
                 self.reportError(type_node, "Type alias '{s}' does not refer to a primitive type\n", .{type_name});
             }
         } else {
