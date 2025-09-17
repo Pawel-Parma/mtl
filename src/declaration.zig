@@ -1,4 +1,5 @@
 const std = @import("std");
+const Token = @import("token.zig");
 const Node = @import("node.zig");
 
 kind: Kind,
@@ -38,8 +39,6 @@ pub const Type = enum {
 
     Type,
 
-    DebugVal,
-
     pub inline fn toInt(self: Type) u8 {
         return @intFromEnum(self);
     }
@@ -71,6 +70,20 @@ pub const Type = enum {
             }
         }
         return left.toInt() == right.toInt();
+    }
+
+    pub fn allowsOperation(self: Type, operation: Node.Kind) bool {
+        // TODO: check for user defined types
+       return switch (operation) {
+            .UnaryMinus, .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash => switch (self) {
+                .I8, .I16, .I32, .I64, .I128,
+                .U8, .U16, .U32, .U64, .U128,
+                .F16, .F32, .F64, .F80, .F128,
+                .ComptimeInt, .ComptimeFloat => true,
+                else => false,
+            },
+            else => false,
+        };
     }
 
     pub const entries: std.StaticStringMap(Type) = .initComptime([_]struct { []const u8, Type }{

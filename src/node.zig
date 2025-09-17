@@ -9,8 +9,12 @@ children: []Node,
 token_index: ?usize = null,
 
 pub const Kind = enum {
-    UnaryOperator,
-    BinaryOperator,
+    UnaryMinus,
+
+    BinaryPlus, 
+    BinaryMinus, 
+    BinaryStar, 
+    BinarySlash,
 
     IntLiteral,
     FloatLiteral,

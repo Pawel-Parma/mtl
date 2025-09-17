@@ -5,5 +5,4 @@ var d: i32 = 21;
 var e := c;
 var f: i32 = e;
 var g := 123;
-const g = 123;
 // asadadadsad asadadadsad

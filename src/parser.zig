@@ -211,7 +211,7 @@ fn parsePrefix(self: *Parser) !Node {
             const token_index = self.advance();
             const expr = try self.parseExpressionWithPrecedence(Token.Precedence.Prefix);
             const children = try self.nodesFromTuple(.{expr});
-            return .{ .kind = .UnaryOperator, .children = children, .token_index = token_index };
+            return .{ .kind = .UnaryMinus, .children = children, .token_index = token_index };
         },
         else => return self.reportError("Unexpected prefix: {any}\n", .{token.kind}),
     }
@@ -224,7 +224,14 @@ fn parseInfixOrSuffix(self: *Parser, left: Node) !Node {
         .Plus, .Minus, .Star, .Slash => {
             const right = try self.parseExpressionWithPrecedence(token.precedence());
             const children = try self.nodesFromTuple(.{ left, right });
-            return Node{ .kind = .BinaryOperator, .children = children, .token_index = token_index };
+            const kind: Node.Kind = switch (token.kind) {
+                .Plus => .BinaryPlus,
+                .Minus => .BinaryMinus,
+                .Star => .BinaryStar,
+                .Slash => .BinarySlash,
+                else => unreachable,
+            };
+            return Node{ .kind = kind, .children = children, .token_index = token_index };
         },
         else => return self.reportError("Unexpected infixOrSuffix: {any}\n", .{token.kind}),
     }

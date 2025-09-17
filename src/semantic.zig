@@ -58,7 +58,7 @@ fn reportError(self: *Semantic, node: Node, comptime fmt: []const u8, args: anyt
     const line_info = token.lineInfo(self.buffer);
     const column_number = token.start - line_info.start;
     const line = core.getLine(self.buffer, line_info.start, token.start, len);
-   
+
     core.printSourceLine(fmt, args, "mtl/semantic.zig", line_info.number, column_number, line, token.len());
     core.rprint("Error: ", .{});
     core.rprint(fmt, args);
@@ -122,16 +122,23 @@ fn inferType(self: *Semantic, node: Node) Declaration.Type {
     switch (node.kind) {
         .IntLiteral => return .ComptimeInt,
         .FloatLiteral => return .ComptimeFloat,
-        .UnaryOperator => {
+        .UnaryMinus => {
             const child_type = self.inferType(node.children[0]);
-            // TODO: add operator validation
+            if (!child_type.allowsOperation(.UnaryMinus)) {
+                self.reportError(node, "Unary minus not allowed on type {any}", .{child_type});
+            }
             return child_type;
         },
-        .BinaryOperator => {
+        .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash => {
             const left_type = self.inferType(node.children[0]);
             const right_type = self.inferType(node.children[1]);
             if (left_type.equals(right_type)) {
-                // TODO: add operator validation
+                if (!left_type.allowsOperation(node.kind)) {
+                    self.reportError(node, "Operation {any} not allowed on type {any}", .{ node.kind, left_type });
+                }
+                if (!right_type.allowsOperation(node.kind)) {
+                    self.reportError(node, "Operation {any} not allowed on type {any}", .{ node.kind, right_type });
+                }
                 return left_type;
             }
             self.reportError(node, "Type mismatch in binary operator: expected {any}, got {any}", .{ left_type, right_type });
