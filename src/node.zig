@@ -10,10 +10,12 @@ token_index: ?usize = null,
 pub const Kind = enum {
     UnaryMinus,
 
-    BinaryPlus, 
-    BinaryMinus, 
-    BinaryStar, 
+    BinaryPlus,
+    BinaryMinus,
+    BinaryStar,
     BinarySlash,
+
+    Call,
 
     IntLiteral,
     FloatLiteral,
@@ -23,6 +25,9 @@ pub const Kind = enum {
 
     Keyword,
     Declaration,
+    Function,
+    Parameter,
+    Parameters,
 
     Expression,
 

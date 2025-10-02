@@ -9,6 +9,7 @@ expr: ?Node,
 pub const Kind = enum {
     Var,
     Const,
+    Function,
 };
 
 pub const Type = enum {
@@ -39,45 +40,43 @@ pub const Type = enum {
 
     Type,
 
+    Function,
+
     pub inline fn toInt(self: Type) u8 {
         return @intFromEnum(self);
     }
 
     pub fn equals(left: Type, right: Type) bool {
         if (left == .ComptimeInt or left == .ComptimeFloat or right == .ComptimeInt or right == .ComptimeFloat) {
-            const it: [2][2]Type = .{ .{ left, right }, .{ right, left } };
-            for (it) |pair| {
-                const s1, const s2 = pair;
-                // TODO: add check if the number can fit inside the type
-                switch (s1) {
-                    .ComptimeInt => switch (s2) {
-                        .ComptimeInt, .ComptimeFloat,
-                        .I8, .I16, .I32, .I64, .I128, 
-                        .U8, .U16, .U32, .U64, .U128,
-                        .F16, .F32, .F64, .F80, .F128 => return true,
-                        else => return false,
-                    },
-                    .ComptimeFloat => {
-                        switch (s2) {
-                            .ComptimeFloat, .F16, .F32, .F64, .F80, .F128 => return true,
-                            else => return false,
-                        }
-                    },
-                    else => {},
-                }
-            }
+            return left.leftCastOnlyEquals(right) or right.leftCastOnlyEquals(left);
         }
         return left.toInt() == right.toInt();
     }
 
+    pub fn leftCastOnlyEquals(left: Type, right: Type) bool {
+        if (left == .ComptimeInt or left == .ComptimeFloat) {
+            // TODO: add check if the number can fit inside the type
+            switch (left) {
+                .ComptimeInt => switch (right) {
+                    .ComptimeInt, .ComptimeFloat, .I8, .I16, .I32, .I64, .I128, .U8, .U16, .U32, .U64, .U128, .F16, .F32, .F64, .F80, .F128 => return true,
+                    else => return false,
+                },
+                .ComptimeFloat => {
+                    switch (right) {
+                        .ComptimeFloat, .F16, .F32, .F64, .F80, .F128 => return true,
+                        else => return false,
+                    }
+                },
+                else => {},
+            }
+        }
+        return left.toInt() == right.toInt();
+    }
     pub fn allowsOperation(self: Type, operation: Node.Kind) bool {
         // TODO: check for user defined types
-       return switch (operation) {
+        return switch (operation) {
             .UnaryMinus, .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash => switch (self) {
-                .I8, .I16, .I32, .I64, .I128,
-                .U8, .U16, .U32, .U64, .U128,
-                .F16, .F32, .F64, .F80, .F128,
-                .ComptimeInt, .ComptimeFloat => true,
+                .I8, .I16, .I32, .I64, .I128, .U8, .U16, .U32, .U64, .U128, .F16, .F32, .F64, .F80, .F128, .ComptimeInt, .ComptimeFloat => true,
                 else => false,
             },
             else => false,

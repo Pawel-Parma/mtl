@@ -18,11 +18,15 @@ pub const Kind = enum {
     Colon,
     ColonEquals,
 
+    Comma,
+
     IntLiteral,
     FloatLiteral,
 
     Var,
     Const,
+    Fn,
+    Return,
     Identifier,
 
     ParenLeft,
@@ -32,11 +36,6 @@ pub const Kind = enum {
 
     Eol,
 };
-
-pub const KeywordMap: std.StaticStringMap(Kind) = .initComptime([_]struct { []const u8, Token.Kind }{
-    .{ "const", .Const },
-    .{ "var", .Var },
-});
 
 pub const Precedence = enum(u8) {
     Lowest = 0,
@@ -50,6 +49,7 @@ pub const Precedence = enum(u8) {
         return @intFromEnum(self);
     }
 };
+
 pub inline fn precedence(self: *const Token) Precedence {
     return switch (self.kind) {
         .Equals, .ColonEquals => .Assignment,
@@ -68,6 +68,14 @@ pub inline fn string(self: *const Token, buffer: []const u8) []const u8 {
     return buffer[self.start..self.end];
 }
 
+pub const KeywordMap: std.StaticStringMap(Kind) = .initComptime([_]struct { []const u8, Token.Kind }{
+    .{ "const", .Const },
+    .{ "var", .Var },
+    .{ "fn", .Fn },
+    .{ "return", .Return },
+});
+
+// TODO: move out
 pub fn lineInfo(self: *const Token, buffer: []const u8) struct {
     number: usize,
     start: usize,

@@ -1,6 +1,6 @@
 const std = @import("std");
-const core = @import("core.zig");
 
+const core = @import("core.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
 const Declaration = @import("declaration.zig");
@@ -8,16 +8,18 @@ const Declaration = @import("declaration.zig");
 const Semantic = @This();
 allocator: std.mem.Allocator,
 buffer: []const u8,
+file_path: []const u8,
 tokens: []const Token,
 ast: std.ArrayList(Node),
 scopes: std.ArrayList(std.StringHashMap(Declaration)),
 
 pub const Error = error{} || std.mem.Allocator.Error;
 
-pub fn init(allocator: std.mem.Allocator, buffer: []const u8, tokens: []const Token, ast: std.ArrayList(Node)) Semantic {
+pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const u8, tokens: []const Token, ast: std.ArrayList(Node)) Semantic {
     return .{
         .allocator = allocator,
         .buffer = buffer,
+        .file_path = file_path,
         .tokens = tokens,
         .ast = ast,
         .scopes = .empty,
@@ -30,39 +32,53 @@ pub fn analyze(self: *Semantic) !void {
     for (self.ast.items) |node| {
         try self.semanticPass(node);
     }
+    try self.checkMain();
 }
 
 fn semanticPass(self: *Semantic, node: Node) Error!void {
     switch (node.kind) {
         .Declaration => try self.declarationNode(node),
-        .Scope => try self.scopeNode(node),
+        .Function => try self.functionNode(node),
+        .Call => try self.retvoidCallNode(node),
         else => self.reportError(node, "Unsupported node in semanticPass: {any}", .{node}),
     }
 }
 
+fn checkMain(self: *Semantic) !void {
+    const main = try self.getMain();
+    if (main.children[1].children.len != 0) {
+        self.reportError(main.children[1], "Function main cannot take arguments", .{});
+    }
+    const allowed_main_types = .{ "void", "u8" };
+    const main_type = main.children[2].string(self.buffer, self.tokens);
+    var is_one_of_allowed_types = false;
+    inline for (allowed_main_types) |t| {
+        if (!std.mem.eql(u8, main_type, t)) {
+            is_one_of_allowed_types = true;
+        }
+    }
+    if (!is_one_of_allowed_types) {
+        self.reportError(main.children[2], "function main can only have {any} as return type, found {s}", .{ allowed_main_types, main_type });
+    }
+
+    for (main.children[3].children) |node| {
+        try self.semanticPass(node);
+    }
+}
+
 fn reportError(self: *Semantic, node: Node, comptime fmt: []const u8, args: anytype) noreturn {
-    // TODO: print errors
     const len = self.buffer.len;
     const token = node.token(self.tokens) orelse {
-        core.printSourceLine(fmt, args, "mtl/semantic.zig", 0, 0, "EOF", 3);
-        core.rprint("Error: ", .{});
-        core.rprint(fmt, args);
-        core.rprint("\n", .{});
-        const n: ?u8 = null;
-        const ni = n.? + 1;
-        _ = ni;
-        core.exit(99);
+        core.printSourceLine(fmt ++ "\n", args, self.file_path, 0, 0, "NULL NODE", 9);
+        core.exit(10);
     };
-
     const line_info = token.lineInfo(self.buffer);
     const column_number = token.start - line_info.start;
     const line = core.getLine(self.buffer, line_info.start, token.start, len);
 
-    core.printSourceLine(fmt, args, "mtl/semantic.zig", line_info.number, column_number, line, token.len());
-    core.rprint("Error: ", .{});
-    core.rprint(fmt, args);
-    core.rprint("\n", .{});
-    core.exit(99);
+    core.printSourceLine(fmt ++ "\n", args, self.file_path, line_info.number, column_number, line, token.len());
+    core.rprint("Tokenization failed", .{});
+    core.exit(10);
 }
 
 fn scopeOf(self: *Semantic, name: []const u8) ?*std.StringHashMap(Declaration) {
@@ -78,6 +94,16 @@ inline fn isInScope(self: *Semantic, name: []const u8) bool {
     return self.scopeOf(name) != null;
 }
 
+fn getMain(self: *Semantic) !Node {
+    for (self.ast.items) |node| {
+        if (node.kind == .Function) {
+            if (std.mem.eql(u8, node.children[0].string(self.buffer, self.tokens), "main")) {
+                return node;
+            }
+        }
+    }
+    self.reportError(.{ .kind = .Function, .children = &.{}, .token_index = null }, "", .{});
+}
 fn declarationNode(self: *Semantic, node: Node) !void {
     const identifier = node.children[1].token(self.tokens).?;
     const identifier_name = identifier.string(self.buffer);
@@ -85,7 +111,7 @@ fn declarationNode(self: *Semantic, node: Node) !void {
         self.reportError(node, "Cannot declare variable '{s}', shadows primitive type", .{identifier_name});
     }
     if (self.isInScope(identifier_name)) {
-        self.reportError(node, "Shadowing of '{s}' from outer scope is not allowed\n", .{identifier_name});
+        self.reportError(node, "Cannot declare variable '{s}', shadows '{s}'", .{ identifier_name, identifier_name });
     }
 
     const declaration = node.children[0];
@@ -95,7 +121,7 @@ fn declarationNode(self: *Semantic, node: Node) !void {
     const declared_type: Declaration.Type = if (type_node.token_index) |_| self.resolveType(type_node) else expression_type;
 
     if (!declared_type.equals(expression_type)) {
-        self.reportError(node, "Type mismatch in declaration of '{s}': expected {any}, got {any}\n", .{ identifier_name, declared_type, expression_type });
+        self.reportError(node, "Type mismatch in declaration of '{s}', expected {any}, got {any}\n", .{ identifier_name, declared_type, expression_type });
     }
 
     var current_scope = &self.scopes.items[self.scopes.items.len - 1];
@@ -105,6 +131,78 @@ fn declarationNode(self: *Semantic, node: Node) !void {
         .symbol_type = declared_type,
         .expr = expression,
     });
+}
+
+fn functionNode(self: *Semantic, node: Node) !void {
+    const string = node.children[0].string(self.buffer, self.tokens);
+    core.dprint("adding: {s}\n", .{string});
+    const declaration: Declaration = .{ .kind = .Function, .symbol_type = .Function, .expr = node };
+    try self.scopes.items[0].put(string, declaration);
+}
+
+fn callNode(self: *Semantic, node: Node) Declaration {
+    const function_name = node.children[0].string(self.buffer, self.tokens);
+    core.dprint("{s}\n", .{function_name});
+    const scope = self.scopeOf(function_name) orelse {
+        self.reportError(node.children[0], "function is not defined", .{}); // TODO:
+    };
+    const function = scope.get(function_name).?;
+    // TODO: check types of arguments
+    const arguments = node.children[1];
+    const parameters = function.expr.?.children[1];
+
+    if (arguments.children.len != parameters.children.len) {
+        self.reportError(node, "the amount of arguments does not match the defined ", .{});
+    }
+    if (arguments.children.len == 0) {
+        return function;
+    }
+    // TODO: add support for passing in types
+    for (arguments.children, parameters.children) |a, p| {
+        const parameter_type = blk: {
+            if (Declaration.Type.isPrimitive(p.children[1].string(self.buffer, self.tokens))) {
+                break :blk Declaration.Type.lookup(p.children[1].string(self.buffer, self.tokens)).?;
+            }
+            core.dprint("custom type add support\n", .{});
+            @panic("AAAAA");
+        };
+
+        const argument_type = switch (a.kind) {
+            .IntLiteral => Declaration.Type.ComptimeInt,
+            .FloatLiteral => Declaration.Type.ComptimeFloat,
+            .Identifier => blk: {
+                const argument_identifier = a.string(self.buffer, self.tokens);
+                if (Declaration.Type.isPrimitive(argument_identifier)) {
+                    break :blk Declaration.Type.Type;
+                }
+
+                if (Declaration.Type.isPrimitive(argument_identifier)) {}
+                const argument_scope = self.scopeOf(argument_identifier) orelse {
+                    self.reportError(a, "identifier nod defined {s}", .{argument_identifier});
+                };
+                const argument_declaaration = argument_scope.get(argument_identifier).?;
+                break :blk argument_declaaration.symbol_type;
+            },
+            else => unreachable,
+        };
+        if (!argument_type.leftCastOnlyEquals(parameter_type)) {
+            self.reportError(node, "types: {any} and {any} are not equal", .{ argument_type, parameter_type });
+        }
+    }
+    // TODO: add return type
+    // TODO: analize function body
+    for (function.expr.?.children[3].children) |body_node| {
+        // TODO: enter scope add arguments
+        try self.semanticPass(body_node);
+    }
+
+    return function;
+}
+
+fn retvoidCallNode(self: *Semantic, node: Node) !void {
+    // TODO: check if returns void
+    // TODO: dissalow direct call from top level (no assing)
+    _ = self.callNode(node);
 }
 
 fn scopeNode(self: *Semantic, node: Node) Error!void {
@@ -124,7 +222,7 @@ fn inferType(self: *Semantic, node: Node) Declaration.Type {
         .UnaryMinus => {
             const child_type = self.inferType(node.children[0]);
             if (!child_type.allowsOperation(.UnaryMinus)) {
-                self.reportError(node, "Unary minus not allowed on type {any}", .{child_type});
+                self.reportError(node, "Unary minus is not allowed on type {any}", .{child_type});
             }
             return child_type;
         },
@@ -133,14 +231,14 @@ fn inferType(self: *Semantic, node: Node) Declaration.Type {
             const right_type = self.inferType(node.children[1]);
             if (left_type.equals(right_type)) {
                 if (!left_type.allowsOperation(node.kind)) {
-                    self.reportError(node, "Operation {any} not allowed on type {any}", .{ node.kind, left_type });
+                    self.reportError(node, "Operation {any} is not allowed on type {any}", .{ node.kind, left_type });
                 }
                 if (!right_type.allowsOperation(node.kind)) {
-                    self.reportError(node, "Operation {any} not allowed on type {any}", .{ node.kind, right_type });
+                    self.reportError(node, "Operation {any} is not allowed on type {any}", .{ node.kind, right_type });
                 }
                 return left_type;
             }
-            self.reportError(node, "Type mismatch in binary operator: expected {any}, got {any}", .{ left_type, right_type });
+            self.reportError(node, "Type mismatch in binary operator, expected {any}, got {any}", .{ left_type, right_type });
         },
         .Identifier => {
             if (Declaration.Type.isPrimitive(name)) {
@@ -156,10 +254,15 @@ fn inferType(self: *Semantic, node: Node) Declaration.Type {
             for (node.children) |expr| {
                 const expr_type = self.inferType(expr);
                 if (!first_expr_type.equals(expr_type)) {
-                    self.reportError(node, "Type mismatch in expression: expected {any}, got {any}", .{ first_expr_type, expr_type });
+                    self.reportError(node, "Type mismatch in expression, expected {any}, got {any}", .{ first_expr_type, expr_type });
                 }
             }
             return first_expr_type;
+        },
+        .Call => {
+            const function_node = self.callNode(node);
+            _ = function_node; // TODO:
+            return Declaration.Type.Void;
         },
         else => self.reportError(node, "Unsupported node kind for inferType: {any}", .{node}),
     }

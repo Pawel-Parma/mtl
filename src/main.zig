@@ -2,13 +2,15 @@ const std = @import("std");
 const build = @import("builtin");
 const core = @import("core.zig");
 
+const Args = @import("args.zig");
+const File = @import("file.zig");
 const Tokenizer = @import("tokenizer.zig");
 const Parser = @import("parser.zig");
 const Semantic = @import("semantic.zig");
 
 pub fn main() !u8 {
     var debug_allocator = std.heap.DebugAllocator(.{}).init;
-    defer switch(debug_allocator.deinit()) {
+    defer switch (debug_allocator.deinit()) {
         .ok => {},
         .leak => core.rprint("Memory leak detected\n", .{}),
     };
@@ -20,55 +22,48 @@ pub fn main() !u8 {
     defer arena.deinit();
     const arena_allocator = arena.allocator();
 
-    const args = std.process.argsAlloc(base_allocator) catch {
-        core.rprint("Failed to allocate memory for program arguments\n", .{});
+    const args = Args.init(base_allocator) catch {
+        core.rprint("Error: could not allocate program arguments\n", .{});
         core.exit(1);
     };
-    defer std.process.argsFree(base_allocator, args);
-    if (args.len < 2) {
-        printUsage();
-        return 0;
-    } else if (args.len > 3) {
-        core.rprint("Too many program arguments provided, see usage using: mtl --help\n", .{});
-        core.exit(2);
-    }
-    // TODO: make program args handling better as currently args are positional
-    if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
-        printUsage();
-    }
+    args.process();
 
-    const file_path = args[1]; // TODO: multifile
-    const file_buffer = core.readFileToBuffer(arena_allocator, file_path) catch |err| {
-        core.rprint("Failed to read file: {s} - error: {any}\n", .{ file_path, err });
+    // TODO: multifile
+    const file_path = args.getMainFilePath() orelse {
+        core.rprint("Error: did not provide a file path\n", .{});
+        Args.printUsage();
+        core.exit(2);
+    };
+    var file = File.init(arena_allocator, file_path) catch |err| {
+        core.rprint("Error: {any}, failed to read file: {s}\n", .{ err, file_path });
         core.exit(3);
     };
 
-    var tokenizer = Tokenizer.init(arena_allocator, file_buffer, file_path);
+    var tokenizer = Tokenizer.init(arena_allocator, &file);
     tokenizer.tokenize() catch |err| switch (err) {
-        error.OutOfMemory => core.exitCode("Tokenization failed", .OutOfMemory),
+        error.OutOfMemory => {
+            core.rprint("Error: tokenization failed, OutOfMemory", .{});
+            core.exit(4);
+        },
         else => return 0,
     };
-    const tokens = tokenizer.tokens.items;
 
-    var parser = Parser.init(arena_allocator, file_buffer, file_path, tokens);
+    var parser = Parser.init(arena_allocator, &file);
     parser.parse() catch |err| switch (err) {
-        error.OutOfMemory => core.exitCode("Parsing failed", .OutOfMemory),
+        error.OutOfMemory => {
+            core.rprint("Error: parsing failed, OutOfMemory", .{});
+            core.exit(4);
+        },
         else => return 0,
     };
-    const ast = parser.ast;
 
-    var semantic = Semantic.init(arena_allocator, file_buffer, tokens, ast);
-    semantic.analyze() catch |err| switch(err) {
-        error.OutOfMemory => core.exitCode("Semantic analysis failed", .OutOfMemory),
+    var semantic = Semantic.init(arena_allocator, &file);
+    semantic.analyze() catch |err| switch (err) {
+        error.OutOfMemory => {
+            core.rprint("Error: semantic analusis failed, OutOfMemory", .{});
+            core.exit(4);
+        },
         else => return 0,
     };
     return 0;
-}
-
-fn printUsage() void {
-    core.rprint(
-        \\Usage: mtl [options] <file>
-        \\Options:
-        \\  --help, -h       Show this help message
-    , .{});
 }
