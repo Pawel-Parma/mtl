@@ -355,5 +355,6 @@ const af128d1: f128 = 12.12 / 3.12;
 const af128d3: f128 = af128d0 / 3.12;
 const af128d4: f128 = 12.12 / af128d1;
 const af128d5: f128 = af128d3 / af128d4;
-// invalid
-const i1: f128 = i32 / 1;
+
+fn main() void {}
+

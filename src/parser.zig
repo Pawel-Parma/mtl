@@ -1,17 +1,16 @@
 const std = @import("std");
-const core = @import("core.zig");
 
+const Printer = @import("printer.zig");
+const File = @import("file.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
 
 const Parser = @This();
 allocator: std.mem.Allocator,
-buffer: []const u8,
-file_path: []const u8,
-tokens: []const Token,
+file: *File,
+printer: Printer,
 current: usize,
 success: bool,
-ast: std.ArrayList(Node),
 
 pub const Error = error{
     UnexpectedToken,
@@ -19,32 +18,30 @@ pub const Error = error{
     ParsingFailed,
 } || std.mem.Allocator.Error;
 
-pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const u8, tokens: []const Token) Parser {
+pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Parser {
     return .{
         .allocator = allocator,
-        .buffer = buffer,
-        .file_path = file_path,
-        .tokens = tokens,
+        .file = file,
+        .printer = printer,
         .current = 0,
         .success = true,
-        .ast = .empty,
     };
 }
 
 pub fn parse(self: *Parser) Error!void {
-    const initialCapacity = @min(512, self.tokens.len / 2);
-    try self.ast.ensureTotalCapacity(self.allocator, initialCapacity);
+    const initialCapacity = @min(512, self.file.tokens.items.len / 2);
+    try self.file.ast.ensureTotalCapacity(self.allocator, initialCapacity);
     while (!self.isAtEnd()) {
         const node = self.parseNode() catch {
             self.synchronize();
             continue;
         };
-        try self.ast.append(self.allocator, node);
+        try self.file.ast.append(self.allocator, node);
     }
     if (!self.success) {
         return Error.ParsingFailed;
     }
-    self.printAst();
+    self.file.printAst();
 }
 
 fn parseNode(self: *Parser) Error!Node {
@@ -65,7 +62,7 @@ inline fn advance(self: *Parser) usize {
 }
 
 inline fn isAtEnd(self: *Parser) bool {
-    return self.current >= self.tokens.len;
+    return self.current >= self.file.tokens.items.len;
 }
 
 fn checkEof(self: *Parser) !void {
@@ -75,7 +72,7 @@ fn checkEof(self: *Parser) !void {
 }
 
 inline fn peek(self: *Parser) Token {
-    return self.tokens[self.current];
+    return self.file.tokens.items[self.current];
 }
 
 fn match(self: *Parser, comptime kinds: anytype) !Token {
@@ -122,15 +119,15 @@ inline fn nodesFromTuple(self: *Parser, tuple: anytype) ![]Node {
 
 fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) error{ UnexpectedEof, UnexpectedToken } {
     self.success = false;
-    const len = self.buffer.len;
+    const len = self.file.buffer.len;
     const token = if (self.isAtEnd()) Token{ .kind = .Invalid, .start = len, .end = len } else self.peek();
     const err = if (self.isAtEnd()) error.UnexpectedEof else error.UnexpectedToken;
 
-    const line_info = token.lineInfo(self.buffer);
+    const line_info = self.file.lineInfo(token);
     const column_number = token.start - line_info.start;
-    const line = core.getLine(self.buffer, line_info.start, token.start, len);
+    const line = File.getLine(self.file.buffer, line_info.start, token.start, len);
 
-    core.printSourceLine(fmt, args, self.file_path, line_info.number, column_number, line, token.len());
+    self.printer.printSourceLine(fmt, args, self.file, line_info.number, column_number, line, token.len());
     return err;
 }
 
@@ -329,12 +326,4 @@ fn parseInfixOrSuffix(self: *Parser, left: Node) !Node {
         },
         else => return self.reportError("Unexpected infixOrSuffix: {any}\n", .{token.kind}),
     }
-}
-
-fn printAst(self: *Parser) void {
-    core.dprint("AST:\n", .{});
-    for (self.ast.items) |node| {
-        node.dprint(self.buffer, self.tokens, 0);
-    }
-    core.dprint("\n", .{});
 }

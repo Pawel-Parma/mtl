@@ -1,20 +1,22 @@
 const std = @import("std");
-const core = @import("core.zig");
 
+const Printer = @import("printer.zig");
 const Token = @import("token.zig");
 const File = @import("file.zig");
 
 const Tokenizer = @This();
 allocator: std.mem.Allocator,
+printer: Printer,
 file: *File,
 
 pub const Error = error{
     TokenizingFailed,
 } || std.mem.Allocator.Error;
 
-pub fn init(allocator: std.mem.Allocator, file: *File) Tokenizer {
+pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Tokenizer {
     return .{
         .allocator = allocator,
+        .printer = printer,
         .file = file,
     };
 }
@@ -25,7 +27,7 @@ pub fn tokenize(self: *Tokenizer) Error!void {
         const token = self.nextToken() orelse continue;
         try self.file.tokens.append(self.allocator, token);
     }
-    if (!self.success) {
+    if (!self.file.success) {
         return Error.TokenizingFailed;
     }
     self.file.printTokens();
@@ -70,8 +72,7 @@ inline fn isAtEnd(self: *Tokenizer) bool {
 }
 
 inline fn isIdentifierChar(self: *Tokenizer) bool {
-    const c = self.peek();
-    return switch (c) {
+    return switch (self.peek()) {
         'a'...'z', 'A'...'Z', '0'...'9', '_' => true,
         else => false,
     };
@@ -145,8 +146,8 @@ fn identifierToken(self: *Tokenizer) Token {
         _ = self.advance();
     }
     const word = self.file.buffer[start..self.file.position];
-    const kind = Token.KeywordMap.get(word) orelse .Identifier;
-    return .{ .kind = kind, .start = start, .end = self.position };
+    const kind = Token.keywords.get(word) orelse .Identifier;
+    return .{ .kind = kind, .start = start, .end = self.file.position };
 }
 
 fn unsupportedCharacter(self: *Tokenizer) Token {
@@ -155,8 +156,8 @@ fn unsupportedCharacter(self: *Tokenizer) Token {
     self.file.position += len;
 
     const column_number = self.file.position - self.file.line_start - len;
-    const line = core.getLine(self.file.buffer, self.file.line_start, self.file.position, self.file.buffer.len - self.file.position);
+    const line = File.getLine(self.file.buffer, self.file.line_start, self.file.position, self.file.buffer.len - self.file.position);
 
-    core.printSourceLine("encountered unsupported character\n", .{}, self.file_path, self.line_number, column_number, line, 1);
-    return .{ .kind = .Invalid, .start = self.position - len, .end = self.position };
+    self.printer.printSourceLine("encountered unsupported character\n", .{}, self.file, self.file.line_number, column_number, line, 1);
+    return .{ .kind = .Invalid, .start = self.file.position - len, .end = self.file.position };
 }

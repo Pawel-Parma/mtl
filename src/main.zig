@@ -1,18 +1,25 @@
 const std = @import("std");
 const build = @import("builtin");
-const core = @import("core.zig");
 
 const Args = @import("args.zig");
+const Printer = @import("printer.zig");
 const File = @import("file.zig");
 const Tokenizer = @import("tokenizer.zig");
 const Parser = @import("parser.zig");
 const Semantic = @import("semantic.zig");
 
-pub fn main() !u8 {
+pub fn main() u8 {
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch unreachable;
+
+    const printer = Printer.init(stdout);
+
     var debug_allocator = std.heap.DebugAllocator(.{}).init;
     defer switch (debug_allocator.deinit()) {
+        .leak => @panic("Memory leak detected\n"),
         .ok => {},
-        .leak => core.rprint("Memory leak detected\n", .{}),
     };
     const base_allocator = switch (build.mode) {
         .Debug => debug_allocator.allocator(),
@@ -22,46 +29,51 @@ pub fn main() !u8 {
     defer arena.deinit();
     const arena_allocator = arena.allocator();
 
-    const args = Args.init(base_allocator) catch {
-        core.rprint("Error: could not allocate program arguments\n", .{});
-        core.exit(1);
+    const args = Args.init(base_allocator, printer) catch {
+        // TODO: color theese messages
+        printer.print("Error: could not allocate program arguments\n", .{});
+        return 1;
     };
-    args.process();
+    defer args.deinit();
+    const exit = args.process();
+    if (exit) {
+        return 0;
+    }
 
     // TODO: multifile
     const file_path = args.getMainFilePath() orelse {
-        core.rprint("Error: did not provide a file path\n", .{});
-        Args.printUsage();
-        core.exit(2);
+        printer.print("Error: did not provide a file path\n", .{});
+        args.printUsage();
+        return 0;
     };
-    var file = File.init(arena_allocator, file_path) catch |err| {
-        core.rprint("Error: {any}, failed to read file: {s}\n", .{ err, file_path });
-        core.exit(3);
+    var file = File.init(arena_allocator, printer, file_path) catch |err| {
+        printer.print("Error: {any}, failed to read file: {s}\n", .{ err, file_path });
+        return 2;
     };
 
-    var tokenizer = Tokenizer.init(arena_allocator, &file);
+    var tokenizer = Tokenizer.init(arena_allocator, printer, &file);
     tokenizer.tokenize() catch |err| switch (err) {
         error.OutOfMemory => {
-            core.rprint("Error: tokenization failed, OutOfMemory", .{});
-            core.exit(4);
+            printer.print("Error: tokenization failed, OutOfMemory", .{});
+            return 3;
         },
         else => return 0,
     };
 
-    var parser = Parser.init(arena_allocator, &file);
+    var parser = Parser.init(arena_allocator, printer, &file);
     parser.parse() catch |err| switch (err) {
         error.OutOfMemory => {
-            core.rprint("Error: parsing failed, OutOfMemory", .{});
-            core.exit(4);
+            printer.print("Error: parsing failed, OutOfMemory", .{});
+            return 4;
         },
         else => return 0,
     };
 
-    var semantic = Semantic.init(arena_allocator, &file);
+    var semantic = Semantic.init(arena_allocator, printer, &file);
     semantic.analyze() catch |err| switch (err) {
         error.OutOfMemory => {
-            core.rprint("Error: semantic analusis failed, OutOfMemory", .{});
-            core.exit(4);
+            printer.print("Error: semantic analusis failed, OutOfMemory", .{});
+            return 5;
         },
         else => return 0,
     };

@@ -36,5 +36,6 @@ const j3: f80 = -12;
 const k3: f80 = -j3;
 const l3: f128 = -12;
 const m3: f128 = -l3;
-// bad
-const a4 = -i32;
+
+fn main() void {}
+

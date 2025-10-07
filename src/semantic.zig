@@ -1,27 +1,24 @@
 const std = @import("std");
 
-const core = @import("core.zig");
+const Printer = @import("printer.zig");
+const File = @import("file.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
 const Declaration = @import("declaration.zig");
 
 const Semantic = @This();
 allocator: std.mem.Allocator,
-buffer: []const u8,
-file_path: []const u8,
-tokens: []const Token,
-ast: std.ArrayList(Node),
+file: *File,
+printer: Printer,
 scopes: std.ArrayList(std.StringHashMap(Declaration)),
 
 pub const Error = error{} || std.mem.Allocator.Error;
 
-pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const u8, tokens: []const Token, ast: std.ArrayList(Node)) Semantic {
+pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Semantic {
     return .{
         .allocator = allocator,
-        .buffer = buffer,
-        .file_path = file_path,
-        .tokens = tokens,
-        .ast = ast,
+        .file = file,
+        .printer = printer,
         .scopes = .empty,
     };
 }
@@ -29,7 +26,7 @@ pub fn init(allocator: std.mem.Allocator, buffer: []const u8, file_path: []const
 pub fn analyze(self: *Semantic) !void {
     try self.scopes.append(self.allocator, .init(self.allocator));
     // TODO: make global scope lazily analyzed
-    for (self.ast.items) |node| {
+    for (self.file.ast.items) |node| {
         try self.semanticPass(node);
     }
     try self.checkMain();
@@ -38,6 +35,7 @@ pub fn analyze(self: *Semantic) !void {
 fn semanticPass(self: *Semantic, node: Node) Error!void {
     switch (node.kind) {
         .Declaration => try self.declarationNode(node),
+        .Scope => try self.scopeNode(node),
         .Function => try self.functionNode(node),
         .Call => try self.retvoidCallNode(node),
         else => self.reportError(node, "Unsupported node in semanticPass: {any}", .{node}),
@@ -50,7 +48,7 @@ fn checkMain(self: *Semantic) !void {
         self.reportError(main.children[1], "Function main cannot take arguments", .{});
     }
     const allowed_main_types = .{ "void", "u8" };
-    const main_type = main.children[2].string(self.buffer, self.tokens);
+    const main_type = main.children[2].string(self.file.buffer, self.file.tokens.items);
     var is_one_of_allowed_types = false;
     inline for (allowed_main_types) |t| {
         if (!std.mem.eql(u8, main_type, t)) {
@@ -67,18 +65,18 @@ fn checkMain(self: *Semantic) !void {
 }
 
 fn reportError(self: *Semantic, node: Node, comptime fmt: []const u8, args: anytype) noreturn {
-    const len = self.buffer.len;
-    const token = node.token(self.tokens) orelse {
-        core.printSourceLine(fmt ++ "\n", args, self.file_path, 0, 0, "NULL NODE", 9);
-        core.exit(10);
+    const len = self.file.buffer.len;
+    const token = node.token(self.file.tokens.items) orelse {
+        self.printer.printSourceLine(fmt ++ "\n", args, self.file, 0, 0, "NULL NODE", 9);
+        @panic("10 nn");
     };
-    const line_info = token.lineInfo(self.buffer);
+    const line_info = self.file.lineInfo(token);
     const column_number = token.start - line_info.start;
-    const line = core.getLine(self.buffer, line_info.start, token.start, len);
+    const line = File.getLine(self.file.buffer, line_info.start, token.start, len);
 
-    core.printSourceLine(fmt ++ "\n", args, self.file_path, line_info.number, column_number, line, token.len());
-    core.rprint("Tokenization failed", .{});
-    core.exit(10);
+    self.printer.printSourceLine(fmt ++ "\n", args, self.file, line_info.number, column_number, line, token.len());
+    self.printer.print("Tokenization failed", .{});
+    @panic("10");
 }
 
 fn scopeOf(self: *Semantic, name: []const u8) ?*std.StringHashMap(Declaration) {
@@ -95,9 +93,9 @@ inline fn isInScope(self: *Semantic, name: []const u8) bool {
 }
 
 fn getMain(self: *Semantic) !Node {
-    for (self.ast.items) |node| {
+    for (self.file.ast.items) |node| {
         if (node.kind == .Function) {
-            if (std.mem.eql(u8, node.children[0].string(self.buffer, self.tokens), "main")) {
+            if (std.mem.eql(u8, node.children[0].string(self.file.buffer, self.file.tokens.items), "main")) {
                 return node;
             }
         }
@@ -105,8 +103,8 @@ fn getMain(self: *Semantic) !Node {
     self.reportError(.{ .kind = .Function, .children = &.{}, .token_index = null }, "", .{});
 }
 fn declarationNode(self: *Semantic, node: Node) !void {
-    const identifier = node.children[1].token(self.tokens).?;
-    const identifier_name = identifier.string(self.buffer);
+    const identifier = node.children[1].token(self.file.tokens.items).?;
+    const identifier_name = identifier.string(self.file.buffer);
     if (Declaration.Type.isPrimitive(identifier_name)) {
         self.reportError(node, "Cannot declare variable '{s}', shadows primitive type", .{identifier_name});
     }
@@ -125,7 +123,7 @@ fn declarationNode(self: *Semantic, node: Node) !void {
     }
 
     var current_scope = &self.scopes.items[self.scopes.items.len - 1];
-    const kind: Declaration.Kind = if (declaration.token(self.tokens).?.kind == .Const) .Const else .Var;
+    const kind: Declaration.Kind = if (declaration.token(self.file.tokens.items).?.kind == .Const) .Const else .Var;
     try current_scope.put(identifier_name, .{
         .kind = kind,
         .symbol_type = declared_type,
@@ -134,15 +132,15 @@ fn declarationNode(self: *Semantic, node: Node) !void {
 }
 
 fn functionNode(self: *Semantic, node: Node) !void {
-    const string = node.children[0].string(self.buffer, self.tokens);
-    core.dprint("adding: {s}\n", .{string});
+    const string = node.children[0].string(self.file.buffer, self.file.tokens.items);
+    self.printer.dprint("adding: {s}\n", .{string});
     const declaration: Declaration = .{ .kind = .Function, .symbol_type = .Function, .expr = node };
     try self.scopes.items[0].put(string, declaration);
 }
 
 fn callNode(self: *Semantic, node: Node) Declaration {
-    const function_name = node.children[0].string(self.buffer, self.tokens);
-    core.dprint("{s}\n", .{function_name});
+    const function_name = node.children[0].string(self.file.buffer, self.file.tokens.items);
+    self.printer.dprint("{s}\n", .{function_name});
     const scope = self.scopeOf(function_name) orelse {
         self.reportError(node.children[0], "function is not defined", .{}); // TODO:
     };
@@ -160,10 +158,10 @@ fn callNode(self: *Semantic, node: Node) Declaration {
     // TODO: add support for passing in types
     for (arguments.children, parameters.children) |a, p| {
         const parameter_type = blk: {
-            if (Declaration.Type.isPrimitive(p.children[1].string(self.buffer, self.tokens))) {
-                break :blk Declaration.Type.lookup(p.children[1].string(self.buffer, self.tokens)).?;
+            if (Declaration.Type.lookup(p.children[1].string(self.file.buffer, self.file.tokens.items))) |t| {
+                break :blk t;
             }
-            core.dprint("custom type add support\n", .{});
+            self.printer.dprint("custom type add support\n", .{});
             @panic("AAAAA");
         };
 
@@ -171,12 +169,11 @@ fn callNode(self: *Semantic, node: Node) Declaration {
             .IntLiteral => Declaration.Type.ComptimeInt,
             .FloatLiteral => Declaration.Type.ComptimeFloat,
             .Identifier => blk: {
-                const argument_identifier = a.string(self.buffer, self.tokens);
+                const argument_identifier = a.string(self.file.buffer, self.file.tokens.items);
                 if (Declaration.Type.isPrimitive(argument_identifier)) {
                     break :blk Declaration.Type.Type;
                 }
 
-                if (Declaration.Type.isPrimitive(argument_identifier)) {}
                 const argument_scope = self.scopeOf(argument_identifier) orelse {
                     self.reportError(a, "identifier nod defined {s}", .{argument_identifier});
                 };
@@ -185,7 +182,7 @@ fn callNode(self: *Semantic, node: Node) Declaration {
             },
             else => unreachable,
         };
-        if (!argument_type.leftCastOnlyEquals(parameter_type)) {
+        if (!argument_type.canCastTo(parameter_type)) {
             self.reportError(node, "types: {any} and {any} are not equal", .{ argument_type, parameter_type });
         }
     }
@@ -193,7 +190,8 @@ fn callNode(self: *Semantic, node: Node) Declaration {
     // TODO: analize function body
     for (function.expr.?.children[3].children) |body_node| {
         // TODO: enter scope add arguments
-        try self.semanticPass(body_node);
+        // try self.semanticPass(body_node);
+        _ = body_node;
     }
 
     return function;
@@ -215,7 +213,7 @@ fn scopeNode(self: *Semantic, node: Node) Error!void {
 }
 
 fn inferType(self: *Semantic, node: Node) Declaration.Type {
-    const name = node.string(self.buffer, self.tokens);
+    const name = node.string(self.file.buffer, self.file.tokens.items);
     switch (node.kind) {
         .IntLiteral => return .ComptimeInt,
         .FloatLiteral => return .ComptimeFloat,
@@ -269,18 +267,18 @@ fn inferType(self: *Semantic, node: Node) Declaration.Type {
 }
 
 fn resolveType(self: *Semantic, type_node: Node) Declaration.Type {
-    const type_name = type_node.string(self.buffer, self.tokens);
+    const type_name = type_node.string(self.file.buffer, self.file.tokens.items);
     if (Declaration.Type.lookup(type_name)) |t| {
         return t;
     } else {
         if (self.scopeOf(type_name)) |scope_map| {
             const declaration = scope_map.get(type_name).?;
-            const declaration_name = declaration.expr.?.string(self.buffer, self.tokens);
+            const declaration_name = declaration.expr.?.string(self.file.buffer, self.file.tokens.items);
             if (Declaration.Type.lookup(declaration_name)) |t| {
                 return t;
             } else if (self.scopeOf(declaration_name)) |scope| {
                 const inner_declaration = scope.get(declaration_name).?;
-                const inner_declaration_name = inner_declaration.expr.?.string(self.buffer, self.tokens);
+                const inner_declaration_name = inner_declaration.expr.?.string(self.file.buffer, self.file.tokens.items);
                 if (Declaration.Type.lookup(inner_declaration_name)) |t| {
                     return t;
                 }
