@@ -8,9 +8,8 @@ const Declaration = @import("declaration.zig");
 
 const Semantic = @This();
 allocator: std.mem.Allocator,
-file: *File,
 printer: Printer,
-scopes: std.ArrayList(std.StringHashMap(Declaration)),
+file: *File,
 
 pub const Error = error{} || std.mem.Allocator.Error;
 
@@ -19,12 +18,11 @@ pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Semanti
         .allocator = allocator,
         .file = file,
         .printer = printer,
-        .scopes = .empty,
     };
 }
 
 pub fn analyze(self: *Semantic) !void {
-    try self.scopes.append(self.allocator, .init(self.allocator));
+    try self.file.scopes.append(self.allocator, .init(self.allocator));
     // TODO: make global scope lazily analyzed
     for (self.file.ast.items) |node| {
         try self.semanticPass(node);
@@ -80,7 +78,7 @@ fn reportError(self: *Semantic, node: Node, comptime fmt: []const u8, args: anyt
 }
 
 fn scopeOf(self: *Semantic, name: []const u8) ?*std.StringHashMap(Declaration) {
-    for (self.scopes.items) |*scope_map| {
+    for (self.file.scopes.items) |*scope_map| {
         if (scope_map.contains(name)) {
             return scope_map;
         }
@@ -122,7 +120,7 @@ fn declarationNode(self: *Semantic, node: Node) !void {
         self.reportError(node, "Type mismatch in declaration of '{s}', expected {any}, got {any}\n", .{ identifier_name, declared_type, expression_type });
     }
 
-    var current_scope = &self.scopes.items[self.scopes.items.len - 1];
+    var current_scope = &self.file.scopes.items[self.file.scopes.items.len - 1];
     const kind: Declaration.Kind = if (declaration.token(self.file.tokens.items).?.kind == .Const) .Const else .Var;
     try current_scope.put(identifier_name, .{
         .kind = kind,
@@ -135,7 +133,7 @@ fn functionNode(self: *Semantic, node: Node) !void {
     const string = node.children[0].string(self.file.buffer, self.file.tokens.items);
     self.printer.dprint("adding: {s}\n", .{string});
     const declaration: Declaration = .{ .kind = .Function, .symbol_type = .Function, .expr = node };
-    try self.scopes.items[0].put(string, declaration);
+    try self.file.scopes.items[0].put(string, declaration);
 }
 
 fn callNode(self: *Semantic, node: Node) Declaration {
@@ -204,11 +202,11 @@ fn retvoidCallNode(self: *Semantic, node: Node) !void {
 }
 
 fn scopeNode(self: *Semantic, node: Node) Error!void {
-    try self.scopes.append(self.allocator, .init(self.allocator));
+    try self.file.scopes.append(self.allocator, .init(self.allocator));
     for (node.children) |child| {
         try self.semanticPass(child);
     }
-    var last_scope = self.scopes.pop().?;
+    var last_scope = self.file.scopes.pop().?;
     last_scope.deinit();
 }
 

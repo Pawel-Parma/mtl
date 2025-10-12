@@ -2,8 +2,8 @@ const std = @import("std");
 
 const Token = @This();
 kind: Kind,
-start: usize,
-end: usize,
+start: u32,
+end: u32,
 
 pub const Kind = enum {
     Invalid,
@@ -16,6 +16,7 @@ pub const Kind = enum {
     Equals,
     DoubleEquals,
     Colon,
+    SemiColon,
     ColonEquals,
 
     Comma,
@@ -34,7 +35,9 @@ pub const Kind = enum {
     CurlyLeft,
     CurlyRight,
 
-    Eol,
+    Newline,
+    Comment,
+    EscapeSequence,
 };
 
 pub const Precedence = enum(u8) {

@@ -24,7 +24,11 @@ pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Tokeniz
 pub fn tokenize(self: *Tokenizer) Error!void {
     try self.file.ensureTokensCapacity();
     while (!self.isAtEnd()) {
-        const token = self.nextToken() orelse continue;
+        const token = self.nextToken();
+        switch (token.kind) {
+            .Newline, .Comment, .EscapeSequence => continue,
+            else => {},
+        }
         try self.file.tokens.append(self.allocator, token);
     }
     if (!self.file.success) {
@@ -33,16 +37,25 @@ pub fn tokenize(self: *Tokenizer) Error!void {
     self.file.printTokens();
 }
 
-pub fn nextToken(self: *Tokenizer) ?Token {
+pub fn tokenizeFmt(self: *Tokenizer) Error!void {
+    try self.file.ensureTokensCapacity();
+    while (!self.isAtEnd()) {
+        const token = self.nextToken();
+        try self.file.tokens.append(self.allocator, token);
+    }
+    if (!self.file.success) {
+        return Error.TokenizingFailed;
+    }
+    self.file.printTokens();
+}
+
+pub fn nextToken(self: *Tokenizer) Token {
     return switch (self.peek()) {
-        ' ', '\t', '\r', '\x0B', '\x0C' => blk: {
-            _ = self.advance();
-            break :blk null;
-        },
+        ' ', '\t', '\r', '\x0B', '\x0C' => self.escapeSequenceToken(),
         'a'...'z', 'A'...'Z' => self.identifierToken(),
         '0'...'9' => self.numberLiteralToken(),
         '\n' => self.newLineToken(),
-        ';' => self.oneCharToken(.Eol),
+        ';' => self.oneCharToken(.SemiColon),
         ',' => self.oneCharToken(.Comma),
         '-' => self.oneCharToken(.Minus),
         '+' => self.oneCharToken(.Plus),
@@ -58,7 +71,7 @@ pub fn nextToken(self: *Tokenizer) ?Token {
     };
 }
 
-inline fn advance(self: *Tokenizer) usize {
+inline fn advance(self: *Tokenizer) u32 {
     self.file.position += 1;
     return self.file.position - 1;
 }
@@ -92,23 +105,28 @@ fn twoCharToken(self: *Tokenizer, kind_one: Token.Kind, char_two: u8, kind_two: 
     return .{ .kind = kind_one, .start = start, .end = self.file.position };
 }
 
-fn newLineToken(self: *Tokenizer) ?Token {
+fn newLineToken(self: *Tokenizer) Token {
     self.file.line_number += 1;
     self.file.line_start = self.file.position + 1;
-    _ = self.advance();
-    return null; // TODO: self.oneCharToken(.Eol);
+    return self.oneCharToken(.Newline);
 }
 
-fn slashToken(self: *Tokenizer) ?Token {
+fn escapeSequenceToken(self: *Tokenizer) Token {
     const start = self.advance();
+    return .{ .kind = .EscapeSequence, .start = start, .end = self.file.position };
+}
+
+fn slashToken(self: *Tokenizer) Token {
+    const start = self.advance();
+    var kind: Token.Kind = .Slash;
     if (!self.isAtEnd() and self.peek() == '/') {
         _ = self.advance();
         while (!self.isAtEnd() and self.peek() != '\n') {
             _ = self.advance();
         }
-        return null;
+        kind = .Comment;
     }
-    return .{ .kind = .Slash, .start = start, .end = self.file.position };
+    return .{ .kind = kind, .start = start, .end = self.file.position };
 }
 
 fn numberLiteralToken(self: *Tokenizer) Token {
@@ -152,10 +170,10 @@ fn identifierToken(self: *Tokenizer) Token {
 
 fn unsupportedCharacter(self: *Tokenizer) Token {
     self.file.success = false;
-    const len = std.unicode.utf8ByteSequenceLength(self.peek()) catch 1;
+    const len = std.unicode.utf8ByteSequenceLength(self.peek()) catch @panic("len failed");
     self.file.position += len;
 
-    const column_number = self.file.position - self.file.line_start - len;
+    const column_number = self.file.position - self.file.line_start - len; // TODO: correct len offset
     const line = File.getLine(self.file.buffer, self.file.line_start, self.file.position, self.file.buffer.len - self.file.position);
 
     self.printer.printSourceLine("encountered unsupported character\n", .{}, self.file, self.file.line_number, column_number, line, 1);

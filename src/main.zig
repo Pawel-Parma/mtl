@@ -12,9 +12,8 @@ pub fn main() u8 {
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &stdout_writer.interface;
-    defer stdout.flush() catch unreachable;
-
     const printer = Printer.init(stdout);
+    defer printer.flush();
 
     var debug_allocator = std.heap.DebugAllocator(.{}).init;
     defer switch (debug_allocator.deinit()) {
@@ -30,8 +29,7 @@ pub fn main() u8 {
     const arena_allocator = arena.allocator();
 
     const args = Args.init(base_allocator, printer) catch {
-        // TODO: color theese messages
-        printer.print("Error: could not allocate program arguments\n", .{});
+        printer.eprint("could not allocate program arguments\n", .{});
         return 1;
     };
     defer args.deinit();
@@ -42,7 +40,7 @@ pub fn main() u8 {
 
     // TODO: multifile
     const file_path = args.getMainFilePath() orelse {
-        printer.print("Error: did not provide a file path\n", .{});
+        printer.eprint("did not provide a file path\n", .{});
         args.printUsage();
         return 0;
     };
@@ -54,7 +52,7 @@ pub fn main() u8 {
     var tokenizer = Tokenizer.init(arena_allocator, printer, &file);
     tokenizer.tokenize() catch |err| switch (err) {
         error.OutOfMemory => {
-            printer.print("Error: tokenization failed, OutOfMemory", .{});
+            printer.eprint("tokenization failed, OutOfMemory\n", .{});
             return 3;
         },
         else => return 0,
@@ -63,7 +61,7 @@ pub fn main() u8 {
     var parser = Parser.init(arena_allocator, printer, &file);
     parser.parse() catch |err| switch (err) {
         error.OutOfMemory => {
-            printer.print("Error: parsing failed, OutOfMemory", .{});
+            printer.eprint("parsing failed, OutOfMemory\n", .{});
             return 4;
         },
         else => return 0,
@@ -72,7 +70,7 @@ pub fn main() u8 {
     var semantic = Semantic.init(arena_allocator, printer, &file);
     semantic.analyze() catch |err| switch (err) {
         error.OutOfMemory => {
-            printer.print("Error: semantic analusis failed, OutOfMemory", .{});
+            printer.eprint("semantic analusis failed, OutOfMemory\n", .{});
             return 5;
         },
         else => return 0,

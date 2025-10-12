@@ -30,7 +30,7 @@ const Ansi = struct {
         };
     }
 
-    pub fn apply(self: *Ansi, style: Style) void {
+    pub fn apply(self: *const Ansi, style: Style) void {
         self.writer.print("{s}", .{style.code()}) catch @panic("printing failed\n");
     }
 };
@@ -42,8 +42,20 @@ pub fn init(writer: *std.Io.Writer) Printer {
     };
 }
 
+pub fn flush(self: *const Printer) void {
+    self.writer.flush() catch @panic("Could not flush");
+}
+
 pub fn print(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
     self.writer.print(fmt, args) catch @panic("prining failed\n");
+}
+
+pub fn eprint(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
+    self.ansi.apply(.Bold);
+    self.ansi.apply(.Red);
+    self.print("error: ", .{});
+    self.ansi.apply(.Reset);
+    self.print(fmt, args);
 }
 
 pub fn dprint(self: *Printer, comptime fmt: []const u8, args: anytype) void {

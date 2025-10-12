@@ -3,19 +3,22 @@ const std = @import("std");
 const Printer = @import("printer.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
+const Declaration = @import("declaration.zig");
 
-// TODO:
+// TODO: refactior entire file
 const File = @This();
 allocator: std.mem.Allocator,
 printer: Printer,
 path: []const u8,
 buffer: []const u8,
 tokens: std.ArrayList(Token) = .empty,
-position: usize = 0,
-line_number: usize = 1,
-line_start: usize = 0,
+position: u32 = 0,
+current: u32 = 0,
+line_number: u32 = 1,
+line_start: u32 = 0,
 success: bool = true,
 ast: std.ArrayList(Node) = .empty,
+scopes: std.ArrayList(std.StringHashMap(Declaration)),
 
 pub fn init(allocator: std.mem.Allocator, printer: Printer, file_path: []const u8) !File {
     const buffer = try readBuffer(allocator, file_path);
@@ -24,6 +27,7 @@ pub fn init(allocator: std.mem.Allocator, printer: Printer, file_path: []const u
         .printer = printer,
         .path = file_path,
         .buffer = buffer,
+        .scopes = .empty,
     };
 }
 
@@ -31,17 +35,24 @@ pub fn ensureTokensCapacity(self: *File) !void {
     const initialCapacity = @min(512, self.buffer.len / 2);
     try self.tokens.ensureTotalCapacityPrecise(self.allocator, initialCapacity);
 }
+pub fn ensureAstCapacity(self: *File) !void {
+    const initialCapacity = @min(512, self.tokens.items.len / 2);
+    try self.ast.ensureTotalCapacity(self.allocator, initialCapacity);
+}
 
 pub fn printTokens(self: *File) void {
-    self.printer.dprint("\nTokens:\n", .{});
-    for (self.tokens.items) |token| {
-        var string = token.string(self.buffer);
-        if (string[0] == '\n') {
-            string = "\\n";
+    self.printer.dprint("\nTokens {d}:\n", .{self.tokens.items.len});
+    for (self.tokens.items, 0..) |token, i| {
+        switch (token.kind) {
+            .Newline, .Comment, .EscapeSequence => continue,
+            else => {},
         }
+        const string = token.string(self.buffer);
+        self.printer.dprint("{d}: ", .{i});
         self.printer.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, string });
     }
-    self.printer.dprint("\n", .{});
+    self.printer.dprint("\nTokens End\n", .{});
+    self.printer.flush();
 }
 
 pub fn printAst(self: *File) void {
@@ -50,6 +61,7 @@ pub fn printAst(self: *File) void {
         self.printNode(node, 0);
     }
     self.printer.dprint("\n", .{});
+    self.printer.flush();
 }
 
 pub fn getLine(buffer: []const u8, line_start: usize, start_index: usize, default: usize) []const u8 {
@@ -75,6 +87,11 @@ pub fn printNode(self: *File, node: Node, depth: usize) void {
         self.printer.dprint(" (token.kind={any}) (token.string=\"{s}\")", .{ t.kind, t.string(self.buffer) });
     }
     self.printer.dprint("\n", .{});
+
+    var i: u32 = 0;
+    while (i < node.children) : (i += 1) {
+        self.printNode(child, depth + 1); // TODO:
+    }
 
     for (node.children) |child| {
         self.printNode(child, depth + 1);

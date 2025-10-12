@@ -4,8 +4,8 @@ const Token = @import("token.zig");
 
 const Node = @This();
 kind: Kind,
-children: []Node,
-token_index: ?usize = null,
+children: u32,
+token_index: ?u32 = null,
 
 pub const Kind = enum {
     UnaryMinus,

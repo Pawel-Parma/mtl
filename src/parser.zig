@@ -1,4 +1,5 @@
 const std = @import("std");
+// TODO: append statements directyl to list
 
 const Printer = @import("printer.zig");
 const File = @import("file.zig");
@@ -7,10 +8,8 @@ const Node = @import("node.zig");
 
 const Parser = @This();
 allocator: std.mem.Allocator,
-file: *File,
 printer: Printer,
-current: usize,
-success: bool,
+file: *File,
 
 pub const Error = error{
     UnexpectedToken,
@@ -21,30 +20,25 @@ pub const Error = error{
 pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Parser {
     return .{
         .allocator = allocator,
-        .file = file,
         .printer = printer,
-        .current = 0,
-        .success = true,
+        .file = file,
     };
 }
 
 pub fn parse(self: *Parser) Error!void {
-    const initialCapacity = @min(512, self.file.tokens.items.len / 2);
-    try self.file.ast.ensureTotalCapacity(self.allocator, initialCapacity);
+    try self.file.ensureAstCapacity();
     while (!self.isAtEnd()) {
-        const node = self.parseNode() catch {
+        self.parseNode() catch {
             self.synchronize();
-            continue;
         };
-        try self.file.ast.append(self.allocator, node);
     }
-    if (!self.success) {
+    if (!self.file.success) {
         return Error.ParsingFailed;
     }
     self.file.printAst();
 }
 
-fn parseNode(self: *Parser) Error!Node {
+fn parseNode(self: *Parser) Error!void {
     const token = self.peek();
     return switch (token.kind) {
         .Const, .Var => try self.parseDeclaration(),
@@ -56,23 +50,23 @@ fn parseNode(self: *Parser) Error!Node {
     };
 }
 
-inline fn advance(self: *Parser) usize {
-    self.current += 1;
-    return self.current - 1;
+inline fn advance(self: *Parser) u32 {
+    self.file.current += 1;
+    return self.file.current - 1;
+}
+
+inline fn peek(self: *Parser) Token {
+    return self.file.tokens.items[self.file.current];
 }
 
 inline fn isAtEnd(self: *Parser) bool {
-    return self.current >= self.file.tokens.items.len;
+    return self.file.current >= self.file.tokens.items.len;
 }
 
 fn checkEof(self: *Parser) !void {
     if (self.isAtEnd()) {
         return self.reportError("Unexpected end of file\n", .{});
     }
-}
-
-inline fn peek(self: *Parser) Token {
-    return self.file.tokens.items[self.current];
 }
 
 fn match(self: *Parser, comptime kinds: anytype) !Token {
@@ -97,29 +91,30 @@ inline fn expect(self: *Parser, comptime kind: Token.Kind) !Token {
 }
 
 fn synchronize(self: *Parser) void {
-    while (!self.isAtEnd() and !(self.peek().kind == .Eol or self.peek().kind == .CurlyRight)) {
+    while (!self.isAtEnd() and !(self.peek().kind == .SemiColon or self.peek().kind == .CurlyRight)) {
         _ = self.advance();
     }
-    if (!self.isAtEnd() and (self.peek().kind == .Eol or self.peek().kind == .CurlyRight)) {
+    if (!self.isAtEnd() and (self.peek().kind == .SemiColon or self.peek().kind == .CurlyRight)) {
         _ = self.advance();
     }
 }
 
-inline fn makeLeaf(kind: Node.Kind, token_index: ?usize) Node {
-    return Node{ .kind = kind, .children = &.{}, .token_index = token_index };
+inline fn makeLeaf(kind: Node.Kind, token_index: ?u32) Node {
+    return Node{ .kind = kind, .children = 0, .token_index = token_index };
 }
 
-inline fn nodesFromTuple(self: *Parser, tuple: anytype) ![]Node {
-    const nodeList = try self.allocator.alloc(Node, tuple.len);
-    inline for (tuple, 0..) |item, i| {
-        nodeList[i] = item;
-    }
-    return nodeList;
+inline fn pushNode(self: *Parser, node: Node) !void {
+    try self.file.ast.append(self.allocator, node);
+}
+
+inline fn lastPushed(self: *Parser) *Node {
+    var node = self.file.ast.getLast();
+    return &node;
 }
 
 fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) error{ UnexpectedEof, UnexpectedToken } {
-    self.success = false;
-    const len = self.file.buffer.len;
+    self.file.success = false;
+    const len: u32 = @intCast(self.file.buffer.len);
     const token = if (self.isAtEnd()) Token{ .kind = .Invalid, .start = len, .end = len } else self.peek();
     const err = if (self.isAtEnd()) error.UnexpectedEof else error.UnexpectedToken;
 
@@ -131,108 +126,110 @@ fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) error{ Un
     return err;
 }
 
-fn parseDeclaration(self: *Parser) !Node {
-    const declaration_index = self.current;
+fn parseDeclaration(self: *Parser) !void {
+    const declaration_index = self.file.current;
     const declaration = try self.expectOneOf(.{ .Var, .Const });
-    const name_identifier_index = self.current;
+    try self.pushNode(.{ .kind = .Declaration, .children = 3, .token_index = declaration_index });
+
+    const name_identifier_index = self.file.current;
     _ = try self.expect(.Identifier);
+    try self.pushNode(makeLeaf(.Identifier, name_identifier_index));
 
     const token = switch (declaration.kind) {
         .Const => try self.expectOneOf(.{ .Colon, .Equals }),
         .Var => try self.expectOneOf(.{ .Colon, .ColonEquals }),
         else => unreachable,
     };
-    var type_identifier_index: ?usize = null;
+    var type_identifier_index: ?u32 = null;
     if (token.kind == .Colon) {
-        type_identifier_index = self.current;
+        type_identifier_index = self.file.current;
         _ = try self.expect(.Identifier);
         _ = try self.expect(.Equals);
     }
+    try self.pushNode(makeLeaf(.TypeIdentifier, type_identifier_index));
+
     const expression = try self.parseExpression();
-    _ = try self.expect(.Eol);
-
-    const children = try self.nodesFromTuple(.{
-        makeLeaf(.Keyword, declaration_index),
-        makeLeaf(.Identifier, name_identifier_index),
-        makeLeaf(.TypeIdentifier, type_identifier_index),
-        expression,
-    });
-    return Node{ .kind = .Declaration, .children = children };
+    try self.pushNode(expression);
+    _ = try self.expect(.SemiColon);
 }
 
-fn parseBlock(self: *Parser) Error!Node {
+fn parseBlock(self: *Parser) Error!void {
     _ = try self.expect(.CurlyLeft);
-    const statements = try self.parseNodesUntil(.CurlyRight);
-    _ = try self.expect(.CurlyRight);
-    return Node{ .kind = .Scope, .children = statements };
-}
+    try self.pushNode(.{ .kind = .Scope, .children = 0 });
+    var scope_node = self.lastPushed();
 
-fn parseFunction(self: *Parser) !Node {
-    _ = self.advance();
-    const identifier_index = self.current;
-    _ = try self.expect(.Identifier);
-    _ = try self.expect(.ParenLeft);
-    const parameters = try self.parseParameters();
-    _ = try self.expect(.ParenRight);
-    const type_index = self.current;
-    _ = try self.expect(.Identifier);
-    const block = try self.parseBlock();
-    const children = try self.nodesFromTuple(.{
-        makeLeaf(.Identifier, identifier_index),
-        parameters,
-        makeLeaf(.Identifier, type_index),
-        block,
-    });
-    return .{ .kind = .Function, .children = children, .token_index = 0 };
-}
-
-fn parseReturn(self: *Parser) !Node {
-    const return_index = self.advance();
-    var children: []Node = &.{};
-    if (!self.isAtEnd() and self.peek().kind != .Eol) {
-        const expr = try self.parseExpression();
-        children = try self.nodesFromTuple(.{expr});
+    var children: u32 = 0;
+    while (!self.isAtEnd() and self.peek().kind != .CurlyRight) {
+        self.parseNode() catch {
+            self.synchronize();
+            continue;
+        };
+        children += 1;
     }
-    _ = try self.expect(.Eol);
-    return .{ .kind = .Keyword, .children = children, .token_index = return_index };
+    _ = try self.expect(.CurlyRight);
+
+    scope_node.children = children;
 }
 
-fn parseIdentifier(self: *Parser) !Node {
-    const expr = try self.parseExpression();
-    _ = try self.expect(.Eol);
-    return expr;
-}
+fn parseFunction(self: *Parser) !void {
+    _ = try self.expect(.Fn);
+    try self.pushNode(.{ .kind = .Function, .children = 4 });
 
-fn parseParameter(self: *Parser) !Node {
-    const identifier_index = self.current;
+    const identifier_index = self.file.current;
     _ = try self.expect(.Identifier);
-    _ = try self.expect(.Colon);
-    const type_index = self.current;
-    _ = try self.expect(.Identifier);
-    const children = try self.nodesFromTuple(.{
-        makeLeaf(.Identifier, identifier_index),
-        makeLeaf(.Identifier, type_index),
-    });
-    return .{ .kind = .Parameter, .children = children };
-}
+    try self.pushNode(makeLeaf(.Identifier, identifier_index));
 
-fn parseParameters(self: *Parser) !Node {
-    var parameters: std.ArrayList(Node) = .empty;
+    _ = try self.expect(.ParenLeft);
+    try self.pushNode(.{ .kind = .Parameters, .children = 0 });
+    var parameters = self.lastPushed();
+    var children: u32 = 0;
     while (!self.isAtEnd() and self.peek().kind != .ParenRight) {
-        const parameter = try self.parseParameter();
+        const identifier_index = self.file.current;
+        _ = try self.expect(.Identifier);
+        _ = try self.expect(.Colon);
+        const type_index = self.file.current;
+        _ = try self.expect(.Identifier);
+        const children = try self.nodesFromTuple(.{
+            makeLeaf(.Identifier, identifier_index),
+            makeLeaf(.Identifier, type_index),
+        });
+        const parameter = Node{ .kind = .Parameter, .children = children };
         try parameters.append(self.allocator, parameter);
         if (self.peek().kind == .Comma) {
             _ = self.advance();
         }
     }
-    const children = try parameters.toOwnedSlice(self.allocator);
-    return .{ .kind = .Parameters, .children = children };
+    parameters.children = children;
+    _ = try self.expect(.ParenRight);
+
+    const type_index = self.file.current;
+    _ = try self.expect(.Identifier);
+    try self.pushNode(makeLeaf(.Identifier, type_index));
+
+    const block = try self.parseBlock();
+    try self.pushNode(block);
+}
+
+fn parseReturn(self: *Parser) !void {
+    const return_index = self.file.current;
+    _ = try .expect(.Return);
+    try self.pushNode(.{ .kind = .Keyword, .children = 1, .token_index = return_index });
+
+    const expression = try self.parseExpression();
+    try self.pushNode(expression);
+    _ = try self.expect(.SemiColon);
+}
+
+fn parseIdentifier(self: *Parser) !void {
+    const expression = try self.parseExpression();
+    try self.pushNode(expression);
+    _ = try self.expect(.SemiColon);
 }
 
 fn parseArguments(self: *Parser) !Node {
     var arguments: std.ArrayList(Node) = .empty;
     while (!self.isAtEnd() and self.peek().kind != .ParenRight) {
-        const identifier_index = self.current;
+        const identifier_index = self.file.current;
         const token = try self.expectOneOf(.{ .Identifier, .IntLiteral, .FloatLiteral });
         if (self.peek().kind == .Comma) {
             _ = self.advance();
@@ -251,18 +248,6 @@ fn parseArguments(self: *Parser) !Node {
     }
     const children = try arguments.toOwnedSlice(self.allocator);
     return .{ .kind = .Parameters, .children = children };
-}
-
-fn parseNodesUntil(self: *Parser, endKind: Token.Kind) ![]Node {
-    var list: std.ArrayList(Node) = .empty;
-    while (!self.isAtEnd() and self.peek().kind != endKind) {
-        const node = self.parseNode() catch {
-            self.synchronize();
-            continue;
-        };
-        try list.append(self.allocator, node);
-    }
-    return try list.toOwnedSlice(self.allocator);
 }
 
 inline fn parseExpression(self: *Parser) !Node {
