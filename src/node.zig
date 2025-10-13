@@ -23,7 +23,8 @@ pub const Kind = enum {
     Identifier,
     TypeIdentifier,
 
-    Keyword,
+    Return,
+
     Declaration,
     Function,
     Parameter,

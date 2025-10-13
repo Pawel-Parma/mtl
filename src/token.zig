@@ -14,12 +14,11 @@ pub const Kind = enum {
     Slash,
 
     Equals,
+    ColonEquals,
     DoubleEquals,
+    Comma,
     Colon,
     SemiColon,
-    ColonEquals,
-
-    Comma,
 
     IntLiteral,
     FloatLiteral,
@@ -40,16 +39,16 @@ pub const Kind = enum {
     EscapeSequence,
 };
 
-pub const Precedence = enum(u8) {
-    Lowest = 0,
+pub const Precedence = enum {
+    Lowest,
     Assignment,
     Sum,
     Product,
     Prefix,
     Suffix,
 
-    pub inline fn toInt(self: Precedence) u8 {
-        return @intFromEnum(self);
+    pub inline fn lessThan(self: Precedence, right: Precedence) bool {
+        return @intFromEnum(self) < @intFromEnum(right);
     }
 };
 
@@ -60,6 +59,21 @@ pub inline fn precedence(self: *const Token) Precedence {
         .Star, .Slash => .Product,
         .ParenLeft => .Suffix,
         else => .Lowest,
+    };
+}
+
+pub const Associativity = enum {
+    Left,
+    Right,
+};
+
+pub inline fn associativity(self: *const Token) Associativity {
+    return switch (self.kind) {
+        .Plus, .Minus, .Star, .Slash => .Left,
+        .Equals, .ColonEquals => .Right,
+        .DoubleEquals, .Comma, .Colon => .Left,
+        .ParenLeft => .Left,
+        else => .Left,
     };
 }
 

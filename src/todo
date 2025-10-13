@@ -1,4 +1,5 @@
 should .string and .token accept a *file ?
+test assicitivity
 refactor file
 refactor printSourceLine(
 token node kind rethink

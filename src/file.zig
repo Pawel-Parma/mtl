@@ -35,13 +35,14 @@ pub fn ensureTokensCapacity(self: *File) !void {
     const initialCapacity = @min(512, self.buffer.len / 2);
     try self.tokens.ensureTotalCapacityPrecise(self.allocator, initialCapacity);
 }
+
 pub fn ensureAstCapacity(self: *File) !void {
     const initialCapacity = @min(512, self.tokens.items.len / 2);
     try self.ast.ensureTotalCapacity(self.allocator, initialCapacity);
 }
 
 pub fn printTokens(self: *File) void {
-    self.printer.dprint("\nTokens {d}:\n", .{self.tokens.items.len});
+    self.printer.dprint("Tokens {d}:\n", .{self.tokens.items.len});
     for (self.tokens.items, 0..) |token, i| {
         switch (token.kind) {
             .Newline, .Comment, .EscapeSequence => continue,
@@ -51,16 +52,36 @@ pub fn printTokens(self: *File) void {
         self.printer.dprint("{d}: ", .{i});
         self.printer.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, string });
     }
-    self.printer.dprint("\nTokens End\n", .{});
+    self.printer.dprint("Tokens End\n\n", .{});
     self.printer.flush();
 }
 
 pub fn printAst(self: *File) void {
     self.printer.dprint("AST:\n", .{});
+    var depth_time: std.ArrayList(u32) = .empty;
     for (self.ast.items) |node| {
-        self.printNode(node, 0);
+        for (0..depth_time.items.len) |_| {
+            self.printer.dprint("  ", .{});
+        }
+
+        self.printer.dprint("{any} (children={d}) (token_index={any})", .{ node.kind, node.children, node.token_index });
+        if (node.token(self.tokens.items)) |t| {
+            self.printer.dprint(" (token.kind={any}) (token.string=\"{s}\")", .{ t.kind, t.string(self.buffer) });
+        }
+        self.printer.dprint("\n", .{});
+
+        if (depth_time.items.len > 0) {
+            const last = &depth_time.items[depth_time.items.len - 1];
+            last.* -= 1;
+        }
+        if (node.children > 0) {
+            depth_time.append(self.allocator, node.children) catch @panic("could not print OOM");
+        }
+        while (depth_time.items.len > 0 and depth_time.getLast() == 0) {
+            _ = depth_time.pop();
+        }
     }
-    self.printer.dprint("\n", .{});
+    self.printer.dprint("AST End\n\n", .{});
     self.printer.flush();
 }
 
@@ -76,26 +97,6 @@ fn readBuffer(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
     const buffer = try allocator.alloc(u8, file_size);
     _ = try file.readAll(buffer);
     return buffer;
-}
-
-pub fn printNode(self: *File, node: Node, depth: usize) void {
-    for (0..depth) |_| {
-        self.printer.dprint("  ", .{});
-    }
-    self.printer.dprint("{any} (token_index={any})", .{ node.kind, node.token_index });
-    if (node.token(self.tokens.items)) |t| {
-        self.printer.dprint(" (token.kind={any}) (token.string=\"{s}\")", .{ t.kind, t.string(self.buffer) });
-    }
-    self.printer.dprint("\n", .{});
-
-    var i: u32 = 0;
-    while (i < node.children) : (i += 1) {
-        self.printNode(child, depth + 1); // TODO:
-    }
-
-    for (node.children) |child| {
-        self.printNode(child, depth + 1);
-    }
 }
 
 pub fn lineInfo(self: *File, token: Token) struct {
