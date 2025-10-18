@@ -110,7 +110,19 @@ inline fn lastPushed(self: *Parser) *Node {
     return &self.file.ast.items[self.file.ast.items.len - 1];
 }
 
-fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) error{ UnexpectedEof, UnexpectedToken } {
+fn nodesToHeapSlice(self: *Parser, nodes: anytype) ![]Node {
+    var slice: std.ArrayList(Node) = .empty;
+    inline for (nodes) |node| {
+        switch (@TypeOf(node)) {
+            Node => try slice.append(self.allocator, node),
+            []Node => try slice.appendSlice(self.allocator, node),
+            else => @compileError("unexpected type"),
+        }
+    }
+    return slice.items;
+}
+
+fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) Error {
     self.file.success = false;
     const len: u32 = @intCast(self.file.buffer.len);
     const token = if (self.isAtEnd()) Token{ .kind = .Invalid, .start = len, .end = len } else self.peek();
@@ -248,19 +260,19 @@ fn parsePrefix(self: *Parser) Error![]Node {
     const token = self.peek();
     const token_index = self.advance();
     switch (token.kind) {
-        .Identifier => return try self.nodesToHeapSlice(&.{makeLeaf(.Identifier, token_index)}),
-        .IntLiteral => return try self.nodesToHeapSlice(&.{makeLeaf(.IntLiteral, token_index)}),
-        .FloatLiteral => return try self.nodesToHeapSlice(&.{makeLeaf(.FloatLiteral, token_index)}),
+        .Identifier => return self.nodesToHeapSlice(.{makeLeaf(.Identifier, token_index)}),
+        .IntLiteral => return self.nodesToHeapSlice(.{makeLeaf(.IntLiteral, token_index)}),
+        .FloatLiteral => return self.nodesToHeapSlice(.{makeLeaf(.FloatLiteral, token_index)}),
         .Minus => {
             const minus = Node{ .kind = .UnaryMinus, .children = 1, .token_index = token_index };
             const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Prefix);
-            return try self.nodesToHeapSlice(try std.mem.concat(self.allocator, Node, &.{ &.{minus}, expression }));
+            return self.nodesToHeapSlice(.{ minus, expression });
         },
         .ParenLeft => {
             const grouping = Node{ .kind = .Expression, .children = 1, .token_index = token_index };
             const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
             _ = try self.expect(.ParenRight);
-            return try self.nodesToHeapSlice(try std.mem.concat(self.allocator, Node, &.{ &.{grouping}, expression }));
+            return self.nodesToHeapSlice(.{ grouping, expression });
         },
         else => return self.reportError("Unexpected prefix: {any}\n", .{token.kind}),
     }
@@ -280,46 +292,30 @@ fn parseInfixOrSuffix(self: *Parser, left: []Node) ![]Node {
             };
             const operator = Node{ .kind = kind, .children = 2, .token_index = token_index };
             const expression = try self.parseExpressionWithPrecedence(token.precedence());
-            return try self.nodesToHeapSlice(try std.mem.concat(self.allocator, Node, &.{ &.{operator}, left, expression }));
+            return self.nodesToHeapSlice(.{ operator, left, expression });
         },
         .ParenLeft => {
             const call = Node{ .kind = .Call, .children = 2, .token_index = token_index };
             const arguments = try self.parseArguments();
             _ = try self.expect(.ParenRight);
-            return try self.nodesToHeapSlice(try std.mem.concat(self.allocator, Node, &.{ &.{call}, left, arguments }));
+            return self.nodesToHeapSlice(.{ call, left, arguments });
         },
         else => return self.reportError("Unexpected infixOrSuffix: {any}\n", .{token.kind}),
     }
 }
 
 fn parseArguments(self: *Parser) ![]Node {
-    try self.pushNode(.{ .kind = .Parameters, .children = 0 });
-    var arguments = self.lastPushed();
-    var children: u32 = 0;
+    var arguments: std.ArrayList(Node) = .empty;
+    try arguments.append(self.allocator, .{ .kind = .Arguments, .children = 0 });
     while (!self.isAtEnd() and self.peek().kind != .ParenRight) {
-        const identifier_index = self.file.current;
-        const token = try self.expectOneOf(.{ .Identifier, .IntLiteral, .FloatLiteral }); // TODO: allow to pass expressions as arguments
-        const kind: Node.Kind = switch (token.kind) {
-            .Identifier => .Identifier,
-            .IntLiteral => .IntLiteral,
-            .FloatLiteral => .FloatLiteral,
-            else => unreachable,
-        };
-        try self.pushNode(.{ .kind = kind, .children = 0, .token_index = identifier_index });
-        children += 1;
+        const expressions = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+        for (expressions) |expression| {
+            try arguments.append(self.allocator, expression);
+        }
         if (self.peek().kind == .Comma) {
             _ = self.advance();
         }
     }
-    arguments.children = children;
-    var nod: [1]Node = .{Node{ .kind = .Return, .children = 0 }};
-    return &nod;
-}
-
-inline fn nodesToHeapSlice(self: *Parser, nodes: []const Node) ![]Node {
-    var slice = try self.allocator.alloc(Node, nodes.len);
-    for (nodes, 0..) |node, i| {
-        slice[i] = node;
-    }
-    return slice;
+    arguments.items[0].children = @intCast(arguments.items.len - 1);
+    return arguments.items;
 }

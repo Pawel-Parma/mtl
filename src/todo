@@ -3,3 +3,5 @@ test assicitivity
 refactor file
 refactor printSourceLine(
 token node kind rethink
+add token_index to more nodes
+add tests
