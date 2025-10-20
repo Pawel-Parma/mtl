@@ -1,7 +1,10 @@
 const std = @import("std");
+
+const File = @import("file.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
 
+const Declaration = @This();
 kind: Kind,
 symbol_type: Type,
 node_index: ?u32,
@@ -95,3 +98,8 @@ pub const Type = enum {
         };
     }
 };
+
+pub inline fn node(self: *const Declaration, file: *File) ?Node {
+    const node_index = self.node_index orelse return null;
+    return file.ast.items[node_index];
+}
