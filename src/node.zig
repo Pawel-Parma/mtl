@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const File = @import("file.zig");
 const Token = @import("token.zig");
 
 const Node = @This();
@@ -36,11 +37,11 @@ pub const Kind = enum {
     Scope,
 };
 
-pub inline fn token(self: *const Node, tokens: []const Token) ?Token {
+pub inline fn token(self: *const Node, file: *File) ?Token {
     const idx = self.token_index orelse return null;
-    return tokens[idx];
+    return file.tokens.items[idx];
 }
 
-pub inline fn string(self: *const Node, buffer: []const u8, tokens: []const Token) []const u8 {
-    return self.token(tokens).?.string(buffer);
+pub inline fn string(self: *const Node, file: *File) []const u8 {
+    return self.token(file).?.string(file);
 }

@@ -14,10 +14,13 @@ buffer: []const u8,
 tokens: std.ArrayList(Token) = .empty,
 position: u32 = 0,
 current: u32 = 0,
+selected: u32 = 0,
 line_number: u32 = 1,
 line_start: u32 = 0,
 success: bool = true,
 ast: std.ArrayList(Node) = .empty,
+global_scope: std.StringHashMap(Declaration),
+all_scopes: std.ArrayList(std.StringHashMap(Declaration)),
 scopes: std.ArrayList(std.StringHashMap(Declaration)),
 
 pub fn init(allocator: std.mem.Allocator, printer: Printer, file_path: []const u8) !File {
@@ -27,6 +30,8 @@ pub fn init(allocator: std.mem.Allocator, printer: Printer, file_path: []const u
         .printer = printer,
         .path = file_path,
         .buffer = buffer,
+        .global_scope = .init(allocator),
+        .all_scopes = .empty,
         .scopes = .empty,
     };
 }
@@ -48,7 +53,7 @@ pub fn printTokens(self: *File) void {
             .Newline, .Comment, .EscapeSequence => continue,
             else => {},
         }
-        const string = token.string(self.buffer);
+        const string = token.string(self);
         self.printer.dprint("{d}: ", .{i});
         self.printer.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, string });
     }
@@ -65,14 +70,13 @@ pub fn printAst(self: *File) void {
         }
 
         self.printer.dprint("{any} (children={d}) (token_index={any})", .{ node.kind, node.children, node.token_index });
-        if (node.token(self.tokens.items)) |t| {
-            self.printer.dprint(" (token.kind={any}) (token.string=\"{s}\")", .{ t.kind, t.string(self.buffer) });
+        if (node.token(self)) |t| {
+            self.printer.dprint(" (token.kind={any}) (token.string=\"{s}\")", .{ t.kind, t.string(self) });
         }
         self.printer.dprint("\n", .{});
 
         if (depth_time.items.len > 0) {
-            const last = &depth_time.items[depth_time.items.len - 1];
-            last.* -= 1;
+            depth_time.items[depth_time.items.len - 1] -= 1;
         }
         if (node.children > 0) {
             depth_time.append(self.allocator, node.children) catch @panic("could not print OOM");
@@ -83,6 +87,63 @@ pub fn printAst(self: *File) void {
     }
     self.printer.dprint("AST End\n\n", .{});
     self.printer.flush();
+}
+
+pub fn printScopes(self: *File) void {
+    self.printer.dprint("Scopes:\n", .{});
+
+    self.printer.dprint("Scope {s} Global:\n", .{self.path});
+    self.printScope(self.global_scope);
+    if (self.all_scopes.items.len > 0) {
+        for (self.scopes.items, 0..) |scope, i| {
+            self.printer.dprint("\nScope {d}:\n", .{i});
+            self.printScope(scope);
+        }
+    }
+    self.printer.dprint("Scopes End\n\n", .{});
+    self.printer.flush();
+}
+
+fn printScope(self: *File, scope: std.StringHashMap(Declaration)) void {
+    var max_kind_len: usize = 0;
+    var max_name_len: usize = 0;
+    var max_smbl_len: usize = 0;
+    var it = scope.iterator();
+    while (it.next()) |entry| {
+        const decl = entry.value_ptr.*;
+        const name = entry.key_ptr.*;
+
+        const kind_str = std.fmt.allocPrint(self.allocator, "{any}", .{decl.kind}) catch @panic("OOM");
+        const smbl_str = std.fmt.allocPrint(self.allocator, "{any}", .{decl.symbol_type}) catch @panic("OOM");
+        if (kind_str.len > max_kind_len) max_kind_len = kind_str.len;
+        if (name.len > max_name_len) max_name_len = name.len;
+        if (smbl_str.len > max_smbl_len) max_smbl_len = smbl_str.len;
+    }
+
+    var scope_it = scope.iterator();
+    while (scope_it.next()) |entry| {
+        const name = entry.key_ptr.*;
+        const decl = entry.value_ptr.*;
+
+        const kind_str = std.fmt.allocPrint(self.allocator, "{any}", .{decl.kind}) catch @panic("OOM");
+        self.printer.dprint("{s}", .{kind_str});
+        for (0..(max_kind_len - kind_str.len)) |_| self.printer.dprint(" ", .{});
+        self.printer.dprint(" | ", .{});
+
+        self.printer.dprint("{s}", .{name});
+        for (0..(max_name_len - name.len)) |_| self.printer.dprint(" ", .{});
+        self.printer.dprint(" | ", .{});
+
+        const smbl_str = std.fmt.allocPrint(self.allocator, "{any}", .{decl.symbol_type}) catch @panic("OOM");
+        self.printer.dprint(" {s} ", .{smbl_str});
+        for (0..(max_smbl_len - smbl_str.len)) |_| self.printer.dprint(" ", .{});
+        self.printer.dprint(" | ", .{});
+
+        if (decl.node_index) |idx| {
+            self.printer.dprint(" {any}", .{self.ast.items[idx]});
+        }
+        self.printer.dprint("\n", .{});
+    }
 }
 
 pub fn getLine(buffer: []const u8, line_start: usize, start_index: usize, default: usize) []const u8 {

@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const File = @import("file.zig");
+
 const Token = @This();
 kind: Kind,
 start: u32,
@@ -88,6 +90,6 @@ pub inline fn len(self: *const Token) usize {
     return self.end - self.start;
 }
 
-pub inline fn string(self: *const Token, buffer: []const u8) []const u8 {
-    return buffer[self.start..self.end];
+pub inline fn string(self: *const Token, file: *File) []const u8 {
+    return file.buffer[self.start..self.end];
 }

@@ -4,7 +4,7 @@ const Node = @import("node.zig");
 
 kind: Kind,
 symbol_type: Type,
-expr: ?Node,
+node_index: ?u32,
 
 pub const Kind = enum {
     Var,
@@ -73,7 +73,7 @@ pub const Type = enum {
 
     pub fn canCastTo(self: Type, to: Type) bool {
         // TODO: add check if the number can fit inside the type
-        // TODO: add for function and structs
+        // TODO: add function and structs
         return switch (self) {
             .ComptimeInt => to.isInt() or to.isFloat(),
             .ComptimeFloat => to.isFloat(),

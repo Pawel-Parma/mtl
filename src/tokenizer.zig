@@ -71,7 +71,11 @@ pub fn nextToken(self: *Tokenizer) Token {
     };
 }
 
-inline fn advance(self: *Tokenizer) u32 {
+inline fn advance(self: *Tokenizer) void {
+    self.file.position += 1;
+}
+
+inline fn advanceGetIndex(self: *Tokenizer) u32 {
     self.file.position += 1;
     return self.file.position - 1;
 }
@@ -92,14 +96,14 @@ inline fn isIdentifierChar(self: *Tokenizer) bool {
 }
 
 fn oneCharToken(self: *Tokenizer, kind: Token.Kind) Token {
-    const start = self.advance();
+    const start = self.advanceGetIndex();
     return .{ .kind = kind, .start = start, .end = self.file.position };
 }
 
 fn twoCharToken(self: *Tokenizer, kind_one: Token.Kind, char_two: u8, kind_two: Token.Kind) Token {
-    const start = self.advance();
+    const start = self.advanceGetIndex();
     if (!self.isAtEnd() and self.peek() == char_two) {
-        _ = self.advance();
+        self.advance();
         return .{ .kind = kind_two, .start = start, .end = self.file.position };
     }
     return .{ .kind = kind_one, .start = start, .end = self.file.position };
@@ -112,17 +116,17 @@ fn newLineToken(self: *Tokenizer) Token {
 }
 
 fn escapeSequenceToken(self: *Tokenizer) Token {
-    const start = self.advance();
+    const start = self.advanceGetIndex();
     return .{ .kind = .EscapeSequence, .start = start, .end = self.file.position };
 }
 
 fn slashToken(self: *Tokenizer) Token {
-    const start = self.advance();
+    const start = self.advanceGetIndex();
     var kind: Token.Kind = .Slash;
     if (!self.isAtEnd() and self.peek() == '/') {
-        _ = self.advance();
+        self.advance();
         while (!self.isAtEnd() and self.peek() != '\n') {
-            _ = self.advance();
+            self.advance();
         }
         kind = .Comment;
     }
@@ -136,14 +140,14 @@ fn numberLiteralToken(self: *Tokenizer) Token {
     while (!self.isAtEnd()) {
         switch (self.peek()) {
             '0'...'9', '_' => {
-                _ = self.advance();
+                self.advance();
                 if (has_dot) {
                     is_float = true;
                 }
             },
             '.' => {
                 if (!has_dot) {
-                    _ = self.advance();
+                    self.advance();
                     switch (self.peek()) {
                         '0'...'9', '_' => {},
                         else => break,
@@ -161,7 +165,7 @@ fn numberLiteralToken(self: *Tokenizer) Token {
 fn identifierToken(self: *Tokenizer) Token {
     const start = self.file.position;
     while (!self.isAtEnd() and self.isIdentifierChar()) {
-        _ = self.advance();
+        self.advance();
     }
     const word = self.file.buffer[start..self.file.position];
     const kind = Token.keywords.get(word) orelse .Identifier;

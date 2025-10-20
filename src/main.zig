@@ -6,7 +6,7 @@ const Printer = @import("printer.zig");
 const File = @import("file.zig");
 const Tokenizer = @import("tokenizer.zig");
 const Parser = @import("parser.zig");
-// const Semantic = @import("semantic.zig");
+const Semantic = @import("semantic.zig");
 
 pub fn main() u8 {
     var stdout_buffer: [1024]u8 = undefined;
@@ -67,13 +67,13 @@ pub fn main() u8 {
         else => return 0,
     };
 
-    // var semantic = Semantic.init(arena_allocator, printer, &file);
-    // semantic.analyze() catch |err| switch (err) {
-    //     error.OutOfMemory => {
-    //         printer.eprint("semantic analusis failed, OutOfMemory\n", .{});
-    //         return 5;
-    //     },
-    //     else => return 0,
-    // };
+    var semantic = Semantic.init(arena_allocator, printer, &file);
+    semantic.analyze() catch |err| switch (err) {
+        error.OutOfMemory => {
+            printer.eprint("semantic analusis failed, OutOfMemory\n", .{});
+            return 5;
+        },
+        else => return 0,
+    };
     return 0;
 }
