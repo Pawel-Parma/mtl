@@ -33,6 +33,7 @@ pub const Kind = enum {
     Arguments,
 
     Expression,
+    ExpressionStatement,
 
     Scope,
 };

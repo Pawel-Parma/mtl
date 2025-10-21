@@ -1,7 +1,16 @@
-should .string and .token accept a *file ?
+check returs function stuff 
+allow return to not return expression
+
+add token_index to more nodes
+add assigment
 test assicitivity
+
 refactor file
 refactor printSourceLine(
-token node kind rethink
-add token_index to more nodes
+
+reduce amount od nodes in ast
+
 add tests
+
+
+fix underlining in all error messages

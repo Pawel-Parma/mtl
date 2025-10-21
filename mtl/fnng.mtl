@@ -1,10 +1,9 @@
-fn f1() void {
-
-}
+fn f1() void {}
 
 fn f2() u32 {
     return 1;
 }
+
 fn f3() u32 {
     return f2() + 1;
 }

@@ -72,7 +72,7 @@ pub const Associativity = enum {
 pub inline fn associativity(self: *const Token) Associativity {
     return switch (self.kind) {
         .Plus, .Minus, .Star, .Slash => .Left,
-        .Equals, .ColonEquals => .Right,
+        .Equals => .Right,
         .DoubleEquals, .Comma, .Colon => .Left,
         .ParenLeft => .Left,
         else => .Left,

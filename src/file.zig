@@ -19,18 +19,17 @@ line_number: u32 = 1,
 line_start: u32 = 0,
 success: bool = true,
 ast: std.ArrayList(Node) = .empty,
-global_scope: std.StringHashMap(Declaration),
-all_scopes: std.ArrayList(std.StringHashMap(Declaration)),
-scopes: std.ArrayList(std.StringHashMap(Declaration)),
+global_scope: *std.StringHashMap(Declaration),
+all_scopes: std.ArrayList(*std.StringHashMap(Declaration)),
+scopes: std.ArrayList(*std.StringHashMap(Declaration)),
 
 pub fn init(allocator: std.mem.Allocator, printer: Printer, file_path: []const u8) !File {
-    const buffer = try readBuffer(allocator, file_path);
     return .{
         .allocator = allocator,
         .printer = printer,
         .path = file_path,
-        .buffer = buffer,
-        .global_scope = .init(allocator),
+        .buffer = try readBuffer(allocator, file_path),
+        .global_scope = try makeScope(allocator),
         .all_scopes = .empty,
         .scopes = .empty,
     };
@@ -44,6 +43,41 @@ pub fn ensureTokensCapacity(self: *File) !void {
 pub fn ensureAstCapacity(self: *File) !void {
     const initialCapacity = @min(512, self.tokens.items.len / 2);
     try self.ast.ensureTotalCapacity(self.allocator, initialCapacity);
+}
+
+pub fn getLine(buffer: []const u8, line_start: usize, start_index: usize, default: usize) []const u8 {
+    const line_end = std.mem.indexOfScalarPos(u8, buffer, start_index, '\n') orelse default;
+    return buffer[line_start..line_end];
+}
+
+fn readBuffer(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
+    const file = try std.fs.cwd().openFile(file_path, .{});
+    defer file.close();
+    const file_size = try file.getEndPos();
+    const buffer = try allocator.alloc(u8, file_size);
+    _ = try file.readAll(buffer);
+    return buffer;
+}
+
+pub fn makeScope(allocator: std.mem.Allocator) !*std.StringHashMap(Declaration) {
+    const scope = try allocator.create(std.StringHashMap(Declaration));
+    scope.* = .init(allocator);
+    return scope;
+}
+
+pub fn lineInfo(self: *File, token: Token) struct {
+    number: usize,
+    start: usize,
+} {
+    var line_number: usize = 1;
+    var line_start: usize = 0;
+    for (self.buffer[0..token.start], 0..) |c, i| {
+        if (c == '\n') {
+            line_number += 1;
+            line_start = i + 1;
+        }
+    }
+    return .{ .number = line_number, .start = line_start };
 }
 
 pub fn printTokens(self: *File) void {
@@ -62,7 +96,7 @@ pub fn printTokens(self: *File) void {
 }
 
 pub fn printAst(self: *File) void {
-    self.printer.dprint("AST:\n", .{});
+    self.printer.dprint("AST {d}:\n", .{self.ast.items.len});
     var depth_time: std.ArrayList(u32) = .empty;
     for (self.ast.items) |node| {
         for (0..depth_time.items.len) |_| {
@@ -92,11 +126,11 @@ pub fn printAst(self: *File) void {
 pub fn printScopes(self: *File) void {
     self.printer.dprint("Scopes:\n", .{});
 
-    self.printer.dprint("Scope {s} Global:\n", .{self.path});
+    self.printer.dprint(" Scope {s} Global:\n", .{self.path});
     self.printScope(self.global_scope);
     if (self.all_scopes.items.len > 0) {
-        for (self.scopes.items, 0..) |scope, i| {
-            self.printer.dprint("\nScope {d}:\n", .{i});
+        for (self.all_scopes.items, 0..) |scope, i| {
+            self.printer.dprint(" Scope {d}:\n", .{i});
             self.printScope(scope);
         }
     }
@@ -104,7 +138,7 @@ pub fn printScopes(self: *File) void {
     self.printer.flush();
 }
 
-fn printScope(self: *File, scope: std.StringHashMap(Declaration)) void {
+fn printScope(self: *File, scope: *std.StringHashMap(Declaration)) void {
     var max_kind_len: usize = 0;
     var max_name_len: usize = 0;
     var max_smbl_len: usize = 0;
@@ -126,7 +160,7 @@ fn printScope(self: *File, scope: std.StringHashMap(Declaration)) void {
         const decl = entry.value_ptr.*;
 
         const kind_str = std.fmt.allocPrint(self.allocator, "{any}", .{decl.kind}) catch @panic("OOM");
-        self.printer.dprint("{s}", .{kind_str});
+        self.printer.dprint("  {s}", .{kind_str});
         for (0..(max_kind_len - kind_str.len)) |_| self.printer.dprint(" ", .{});
         self.printer.dprint(" | ", .{});
 
@@ -144,33 +178,4 @@ fn printScope(self: *File, scope: std.StringHashMap(Declaration)) void {
         }
         self.printer.dprint("\n", .{});
     }
-}
-
-pub fn getLine(buffer: []const u8, line_start: usize, start_index: usize, default: usize) []const u8 {
-    const line_end = std.mem.indexOfScalarPos(u8, buffer, start_index, '\n') orelse default;
-    return buffer[line_start..line_end];
-}
-
-fn readBuffer(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
-    const file = try std.fs.cwd().openFile(file_path, .{});
-    defer file.close();
-    const file_size = try file.getEndPos();
-    const buffer = try allocator.alloc(u8, file_size);
-    _ = try file.readAll(buffer);
-    return buffer;
-}
-
-pub fn lineInfo(self: *File, token: Token) struct {
-    number: usize,
-    start: usize,
-} {
-    var line_number: usize = 1;
-    var line_start: usize = 0;
-    for (self.buffer[0..token.start], 0..) |c, i| {
-        if (c == '\n') {
-            line_number += 1;
-            line_start = i + 1;
-        }
-    }
-    return .{ .number = line_number, .start = line_start };
 }

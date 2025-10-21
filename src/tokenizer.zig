@@ -52,7 +52,7 @@ pub fn tokenizeFmt(self: *Tokenizer) Error!void {
 pub fn nextToken(self: *Tokenizer) Token {
     return switch (self.peek()) {
         ' ', '\t', '\r', '\x0B', '\x0C' => self.escapeSequenceToken(),
-        'a'...'z', 'A'...'Z' => self.identifierToken(),
+        '_', 'a'...'z', 'A'...'Z' => self.identifierToken(),
         '0'...'9' => self.numberLiteralToken(),
         '\n' => self.newLineToken(),
         ';' => self.oneCharToken(.SemiColon),

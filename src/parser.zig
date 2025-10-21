@@ -110,8 +110,8 @@ inline fn pushNode(self: *Parser, node: Node) !void {
     try self.file.ast.append(self.allocator, node);
 }
 
-inline fn lastPushed(self: *Parser) *Node {
-    return &self.file.ast.items[self.file.ast.items.len - 1];
+inline fn lastPushedIndex(self: *Parser) u32 {
+    return @intCast(self.file.ast.items.len - 1);
 }
 
 fn nodesToHeapSlice(self: *Parser, nodes: anytype) ![]Node {
@@ -127,6 +127,7 @@ fn nodesToHeapSlice(self: *Parser, nodes: anytype) ![]Node {
 }
 
 fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) Error {
+    // TODO:
     self.file.success = false;
     const len: u32 = @intCast(self.file.buffer.len);
     const token = if (self.isAtEnd()) Token{ .kind = .Invalid, .start = len, .end = len } else self.peek();
@@ -169,11 +170,12 @@ fn parseDeclaration(self: *Parser) !void {
 fn parseBlock(self: *Parser) Error!void {
     _ = try self.expect(.CurlyLeft);
     try self.pushNode(.{ .kind = .Scope, .children = 0 });
-    var scope_node = self.lastPushed();
+    const scope_index = self.lastPushedIndex();
 
     var children: u32 = 0;
     while (!self.isAtEnd() and self.peek().kind != .CurlyRight) {
         self.parseNode() catch {
+            self.printer.dprint("PA FAIL\n", .{});
             self.synchronize();
             continue;
         };
@@ -181,7 +183,7 @@ fn parseBlock(self: *Parser) Error!void {
     }
     _ = try self.expect(.CurlyRight);
 
-    scope_node.children = children;
+    self.file.ast.items[scope_index].children = children;
 }
 
 fn parseFunction(self: *Parser) !void {
@@ -205,7 +207,7 @@ fn parseFunction(self: *Parser) !void {
 
 fn parseParameters(self: *Parser) !void {
     try self.pushNode(.{ .kind = .Parameters, .children = 0 });
-    var parameters = self.lastPushed();
+    const parameters_index = self.lastPushedIndex();
 
     var children: u32 = 0;
     while (!self.isAtEnd() and self.peek().kind != .ParenRight) : (children += 1) {
@@ -223,7 +225,7 @@ fn parseParameters(self: *Parser) !void {
             self.advance();
         }
     }
-    parameters.children = children;
+    self.file.ast.items[parameters_index].children = children;
 }
 
 fn parseReturn(self: *Parser) !void {
@@ -231,12 +233,18 @@ fn parseReturn(self: *Parser) !void {
     _ = try self.expect(.Return);
     try self.pushNode(.{ .kind = .Return, .children = 1, .token_index = return_index });
 
-    try self.parseExpression();
+    if (!self.isAtEnd() and self.peek().kind != .SemiColon) {
+        try self.parseExpression();
+    }
     _ = try self.expect(.SemiColon);
 }
 
 fn parseExpressionStatement(self: *Parser) !void { // TODO:
-    try self.parseExpression();
+    try self.pushNode(.{ .kind = .ExpressionStatement, .children = 1 });
+    const expressions = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+    for (expressions) |expression| {
+        try self.pushNode(expression);
+    }
     _ = try self.expect(.SemiColon);
 }
 

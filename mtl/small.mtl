@@ -1,0 +1,12 @@
+const t: type = type;
+const a: t = t;
+const b: a = a;
+const c: b = b;
+const d: c = c;
+const fp: d = i32;
+const f: fp = 32;
+
+fn main() void {
+
+}
+
