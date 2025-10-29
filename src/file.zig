@@ -5,7 +5,7 @@ const Token = @import("token.zig");
 const Node = @import("node.zig");
 const Declaration = @import("declaration.zig");
 
-// TODO: refactior entire file
+// TODO: refactor entire file
 const File = @This();
 allocator: std.mem.Allocator,
 printer: Printer,
@@ -63,6 +63,15 @@ pub fn makeScope(allocator: std.mem.Allocator) !*std.StringHashMap(Declaration) 
     const scope = try allocator.create(std.StringHashMap(Declaration));
     scope.* = .init(allocator);
     return scope;
+}
+
+pub fn appendScope(self: *File, scope: *std.StringHashMap(Declaration)) !void {
+    try self.scopes.append(self.allocator, scope);
+    try self.all_scopes.append(self.allocator, scope);
+}
+
+pub fn popScope(self: *File) void {
+    _ = self.scopes.pop().?;
 }
 
 pub fn lineInfo(self: *File, token: Token) struct {
@@ -128,11 +137,9 @@ pub fn printScopes(self: *File) void {
 
     self.printer.dprint(" Scope {s} Global:\n", .{self.path});
     self.printScope(self.global_scope);
-    if (self.all_scopes.items.len > 0) {
-        for (self.all_scopes.items, 0..) |scope, i| {
-            self.printer.dprint(" Scope {d}:\n", .{i});
-            self.printScope(scope);
-        }
+    for (self.all_scopes.items, 0..) |scope, i| {
+        self.printer.dprint(" Scope {d}:\n", .{i});
+        self.printScope(scope);
     }
     self.printer.dprint("Scopes End\n\n", .{});
     self.printer.flush();

@@ -1,5 +1,6 @@
 check returs function stuff 
 allow return to not return expression
+support recvursion
 
 add token_index to more nodes
 add assigment

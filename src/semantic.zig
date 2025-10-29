@@ -176,8 +176,10 @@ fn inferType(self: *Semantic, node_index: u32) Declaration.Type {
             return self.inferType(node_index + 1);
         },
         .Call => {
-            // const function_node = self.callNode(node);
-            // _ = function_node; // TODO:
+            const prev_selected = self.file.selected;
+            self.file.selected = node_index;
+            self.callNode() catch @panic("XDDD"); // TODO: URGENT REMVO
+            self.file.selected = prev_selected;
             return Declaration.Type.Void;
         },
         else => self.reportError("Unsupported node for inferType: {any}\n", .{node}),
@@ -235,9 +237,8 @@ fn startAnalisisFromMain(self: *Semantic) !void {
 
 fn scopeNode(self: *Semantic) Error!void {
     const scope = try File.makeScope(self.allocator);
-    try self.file.scopes.append(self.allocator, scope);
-    defer _ = self.file.scopes.pop().?;
-    try self.file.all_scopes.append(self.allocator, scope);
+    try self.file.appendScope(scope);
+    defer self.file.popScope();
 
     const node = self.peek();
     self.advance();
@@ -253,6 +254,7 @@ fn semanticPass(self: *Semantic) Error!void {
         .Declaration => try self.declarationNode(),
         .Scope => try self.scopeNode(),
         .ExpressionStatement => try self.expressionStatementNode(),
+        .Return => {}, // TODO:
         else => self.reportError("Unsupported node for semanticPass: {any}\n", .{node}),
     }
 }
@@ -287,6 +289,7 @@ fn callNode(self: *Semantic) !void {
     }
 
     // TODO: add support for passing in types as parameters, eg. fn a(T: type, a: T, b: T) T {...}
+    const parameters_scope = try File.makeScope(self.allocator);
     if (arguments.children != 0) {
         for (1..arguments_index) |i_usize| {
             const i: u32 = @intCast(i_usize);
@@ -302,13 +305,22 @@ fn callNode(self: *Semantic) !void {
             if (!argument_type.canCastTo(parameter_type)) {
                 self.reportError("Argument type: {any} cannot cast to parameter type: {any}\n", .{ argument_type, parameter_type });
             }
+
+            // const parameter_name = self.get(parameters_index + i).string(self.file);
+            // try parameters_scope.put(parameter_name, .{
+            //     .kind = .Var,
+            //     .symbol_type = ,
+            //     .node_index = expression_index,
+            // });
         }
     }
 
     const prev_selected = self.file.selected;
     self.file.selected = function.node_index.? + 4;
     // TODO: add arguments to the scope
+    try self.file.appendScope(parameters_scope);
     try self.scopeNode();
+    self.file.popScope();
     self.file.selected = prev_selected;
     self.advance();
 }
