@@ -1,6 +1,9 @@
 check returs function stuff 
 allow return to not return expression
 support recvursion
+add vars to scope
+make diff scopes
+add _ = f()
 
 add token_index to more nodes
 add assigment

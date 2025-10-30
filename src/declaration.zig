@@ -10,9 +10,12 @@ symbol_type: Type,
 node_index: ?u32,
 
 pub const Kind = enum {
-    Var,
+    PubConst,
+    PubVar,
+    PubFn,
     Const,
-    Function,
+    Var,
+    Fn,
 };
 
 pub const Type = enum {

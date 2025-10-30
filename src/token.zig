@@ -22,19 +22,20 @@ pub const Kind = enum {
     Colon,
     SemiColon,
 
-    IntLiteral,
-    FloatLiteral,
-
-    Var,
-    Const,
-    Fn,
-    Return,
-    Identifier,
-
     ParenLeft,
     ParenRight,
     CurlyLeft,
     CurlyRight,
+
+    IntLiteral,
+    FloatLiteral,
+    Identifier,
+
+    Pub,
+    Var,
+    Const,
+    Fn,
+    Return,
 
     Newline,
     Comment,
@@ -80,6 +81,7 @@ pub inline fn associativity(self: *const Token) Associativity {
 }
 
 pub const keywords: std.StaticStringMap(Kind) = .initComptime([_]struct { []const u8, Token.Kind }{
+    .{ "pub", .Pub },
     .{ "const", .Const },
     .{ "var", .Var },
     .{ "fn", .Fn },

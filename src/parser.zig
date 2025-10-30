@@ -40,9 +40,10 @@ pub fn parse(self: *Parser) Error!void {
 fn parseNode(self: *Parser) Error!void {
     const token = self.peek();
     return switch (token.kind) {
-        .Const, .Var => try self.parseDeclaration(),
-        .CurlyLeft => try self.parseBlock(),
+        .Var, .Const => try self.parseDeclaration(),
         .Fn => try self.parseFunction(),
+        .Pub => try self.parsePub(),
+        .CurlyLeft => try self.parseBlock(),
         .Return => try self.parseReturn(),
         .Identifier => try self.parseExpressionStatement(),
         else => self.reportError("Unexpected token {any}\n", .{token}),
@@ -167,25 +168,6 @@ fn parseDeclaration(self: *Parser) !void {
     _ = try self.expect(.SemiColon);
 }
 
-fn parseBlock(self: *Parser) Error!void {
-    _ = try self.expect(.CurlyLeft);
-    try self.pushNode(.{ .kind = .Scope, .children = 0 });
-    const scope_index = self.lastPushedIndex();
-
-    var children: u32 = 0;
-    while (!self.isAtEnd() and self.peek().kind != .CurlyRight) {
-        self.parseNode() catch {
-            self.printer.dprint("PA FAIL\n", .{});
-            self.synchronize();
-            continue;
-        };
-        children += 1;
-    }
-    _ = try self.expect(.CurlyRight);
-
-    self.file.ast.items[scope_index].children = children;
-}
-
 fn parseFunction(self: *Parser) !void {
     _ = try self.expect(.Fn);
     try self.pushNode(.{ .kind = .Function, .children = 4 });
@@ -228,6 +210,36 @@ fn parseParameters(self: *Parser) !void {
     self.file.ast.items[parameters_index].children = children;
 }
 
+fn parsePub(self: *Parser) !void {
+    const token_index = self.advanceGetIndex();
+    try self.pushNode(.{ .kind = .Public, .children = 1, .token_index = token_index });
+    const token = self.peek();
+    return switch (token.kind) {
+        .Var, .Const => self.parseDeclaration(),
+        .Fn => self.parseFunction(),
+        else => self.reportError("unexpected token {any} after pub\n", .{token}),
+    };
+}
+
+fn parseBlock(self: *Parser) Error!void {
+    _ = try self.expect(.CurlyLeft);
+    try self.pushNode(.{ .kind = .Scope, .children = 0 });
+    const scope_index = self.lastPushedIndex();
+
+    var children: u32 = 0;
+    while (!self.isAtEnd() and self.peek().kind != .CurlyRight) {
+        self.parseNode() catch {
+            self.printer.print("PA FAIL\n", .{});
+            self.synchronize();
+            continue;
+        };
+        children += 1;
+    }
+    _ = try self.expect(.CurlyRight);
+
+    self.file.ast.items[scope_index].children = children;
+}
+
 fn parseReturn(self: *Parser) !void {
     const return_index = self.file.current;
     _ = try self.expect(.Return);
@@ -250,10 +262,8 @@ fn parseExpressionStatement(self: *Parser) !void { // TODO:
 
 inline fn parseExpression(self: *Parser) !void {
     try self.pushNode(.{ .kind = .Expression, .children = 1 });
-    const expressions = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-    for (expressions) |expression| {
-        try self.pushNode(expression);
-    }
+    const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+    try self.file.ast.appendSlice(self.allocator, expression);
 }
 
 fn parseExpressionWithPrecedence(self: *Parser, precedence: Token.Precedence) Error![]Node {
@@ -281,8 +291,8 @@ fn parsePrefix(self: *Parser) Error![]Node {
             const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Prefix);
             return self.nodesToHeapSlice(.{ minus, expression });
         },
-        .ParenLeft => {
-            const grouping = Node{ .kind = .Expression, .children = 1, .token_index = token_index };
+        .ParenLeft => { // TODO:
+            const grouping = Node{ .kind = .Grouping, .children = 1, .token_index = token_index };
             const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
             _ = try self.expect(.ParenRight);
             return self.nodesToHeapSlice(.{ grouping, expression });
@@ -320,15 +330,14 @@ fn parseInfixOrSuffix(self: *Parser, left: []Node) ![]Node {
 fn parseArguments(self: *Parser) ![]Node {
     var arguments: std.ArrayList(Node) = .empty;
     try arguments.append(self.allocator, .{ .kind = .Arguments, .children = 0 });
-    while (!self.isAtEnd() and self.peek().kind != .ParenRight) {
-        const expressions = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-        for (expressions) |expression| {
-            try arguments.append(self.allocator, expression);
-        }
+    var children: u32 = 0;
+    while (!self.isAtEnd() and self.peek().kind != .ParenRight) : (children += 1) {
+        const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+        try arguments.appendSlice(self.allocator, expression);
         if (self.peek().kind == .Comma) {
             self.advance();
         }
     }
-    arguments.items[0].children = @intCast(arguments.items.len - 1);
+    arguments.items[0].children = children;
     return arguments.items;
 }

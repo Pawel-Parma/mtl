@@ -16,21 +16,21 @@ pub const Kind = enum {
     BinaryStar,
     BinarySlash,
 
+    Grouping,
     Call,
 
     IntLiteral,
     FloatLiteral,
-
     Identifier,
     TypeIdentifier,
 
-    Return,
-
+    Public,
     Declaration,
     Function,
     Parameter,
     Parameters,
     Arguments,
+    Return,
 
     Expression,
     ExpressionStatement,

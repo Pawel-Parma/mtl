@@ -356,5 +356,5 @@ const af128d3: f128 = af128d0 / 3.12;
 const af128d4: f128 = 12.12 / af128d1;
 const af128d5: f128 = af128d3 / af128d4;
 
-fn main() void {}
+pub fn main() void {}
 

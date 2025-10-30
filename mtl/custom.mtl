@@ -2,7 +2,7 @@ const int = i32;
 
 const a: int = 124;
 
-fn main() void {
+pub fn main() void {
     const b = a;
     const c = b;
     const d = c;

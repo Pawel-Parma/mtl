@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const Printer = @import("printer.zig");
 const Token = @import("token.zig");
@@ -90,75 +91,131 @@ pub fn lineInfo(self: *File, token: Token) struct {
 }
 
 pub fn printTokens(self: *File) void {
-    self.printer.dprint("Tokens {d}:\n", .{self.tokens.items.len});
+    if (builtin.mode != .Debug) {
+        return;
+    }
+    self.printer.printString("\n=== TOKENS (");
+    self.printer.printColor(.Yellow, "{d}", .{self.tokens.items.len});
+    self.printer.printString(") ===\n");
+    const max_len = std.fmt.count("{d}", .{self.tokens.items.len});
     for (self.tokens.items, 0..) |token, i| {
         switch (token.kind) {
             .Newline, .Comment, .EscapeSequence => continue,
             else => {},
         }
-        const string = token.string(self);
-        self.printer.dprint("{d}: ", .{i});
-        self.printer.dprint("  {any} (start={any}, end={any}): \"{s}\"\n", .{ token.kind, token.start, token.end, string });
+        self.printer.printColor(.Magenta, "{d}", .{i});
+        self.printer.printString(":");
+        const current_len = std.fmt.count("{d}", .{i});
+        self.printer.pad(max_len - current_len);
+        self.printer.printString("  ");
+        self.printer.printColor(.Blue, "{any}", .{token.kind});
+        // self.printer.print(" (start={any}, end={any}) ", .{ token.start, token.end });
+        self.printer.printString(" (start=");
+        self.printer.printColor(.Yellow, "{any}", .{token.start});
+        self.printer.printString(") (end=");
+        self.printer.printColor(.Yellow, "{any}", .{token.end});
+        self.printer.printString(") (token.string=");
+        self.printer.printColor(.Green, "\"{s}\"", .{token.string(self)});
+        self.printer.printString(")\n");
     }
-    self.printer.dprint("Tokens End\n\n", .{});
+    self.printer.printString("=== TOKENS END ===\n");
     self.printer.flush();
 }
 
 pub fn printAst(self: *File) void {
-    self.printer.dprint("AST {d}:\n", .{self.ast.items.len});
+    if (builtin.mode != .Debug) {
+        return;
+    }
+    self.printer.printString("\n=== AST (");
+    self.printer.printColor(.Yellow, "{d}", .{self.ast.items.len});
+    self.printer.printString(") ===\n");
     var depth_time: std.ArrayList(u32) = .empty;
     for (self.ast.items) |node| {
-        for (0..depth_time.items.len) |_| {
-            self.printer.dprint("  ", .{});
+        for (0..depth_time.items.len) |i| {
+            const remaining = depth_time.items[i];
+            if (i == depth_time.items.len - 1) {
+                if (remaining > 1) {
+                    self.printer.printString("├─");
+                } else {
+                    self.printer.printString("└─");
+                }
+            } else {
+                if (remaining > 0)
+                    self.printer.printString("│  ")
+                else
+                    self.printer.printString("   ");
+            }
         }
-
-        self.printer.dprint("{any} (children={d}) (token_index={any})", .{ node.kind, node.children, node.token_index });
+        if (depth_time.items.len % 2 == 1) {
+            self.printer.printColor(.Blue, "{any}", .{node.kind});
+        } else {
+            self.printer.printColor(.Magenta, "{any}", .{node.kind});
+        }
+        self.printer.printString(" (children=");
+        self.printer.printColor(.Yellow, "{d}", .{node.children});
+        self.printer.printString(") (token_index=");
+        const token_index_color_code: Printer.Ansi.Code = if (node.token_index) |_| .Yellow else .Red;
+        self.printer.printColor(token_index_color_code, "{?d}", .{node.token_index});
+        self.printer.printString(")");
         if (node.token(self)) |t| {
-            self.printer.dprint(" (token.kind={any}) (token.string=\"{s}\")", .{ t.kind, t.string(self) });
+            self.printer.printString(" (token.kind=");
+            self.printer.printColor(.Cyan, "{any}", .{t.kind});
+            self.printer.printString(") (token.string=");
+            self.printer.printColor(.Green, "\"{s}\"", .{t.string(self)});
+            self.printer.printString(")");
         }
-        self.printer.dprint("\n", .{});
+        self.printer.printString("\n");
 
         if (depth_time.items.len > 0) {
             depth_time.items[depth_time.items.len - 1] -= 1;
         }
         if (node.children > 0) {
-            depth_time.append(self.allocator, node.children) catch @panic("could not print OOM");
+            depth_time.append(self.allocator, node.children) catch @panic("could not append OOM");
         }
         while (depth_time.items.len > 0 and depth_time.getLast() == 0) {
             _ = depth_time.pop();
         }
     }
-    self.printer.dprint("AST End\n\n", .{});
+    self.printer.printString("=== AST END ===\n");
     self.printer.flush();
 }
 
 pub fn printScopes(self: *File) void {
-    self.printer.dprint("Scopes:\n", .{});
+    if (builtin.mode != .Debug) {
+        return;
+    }
+    self.printer.printString("\n=== SCOPES (");
+    self.printer.printColor(.Yellow, "{d}", .{self.all_scopes.items.len});
+    self.printer.printString(") ===\n");
 
-    self.printer.dprint(" Scope {s} Global:\n", .{self.path});
+    self.printer.printString(" Scope ");
+    self.printer.printColor(.Yellow, "global", .{});
+    self.printer.print(" {s}:\n", .{self.path});
     self.printScope(self.global_scope);
     for (self.all_scopes.items, 0..) |scope, i| {
-        self.printer.dprint(" Scope {d}:\n", .{i});
+        self.printer.printString(" Scope ");
+        self.printer.printColor(.Yellow, "{d}", .{i});
+        self.printer.printString(":\n");
         self.printScope(scope);
     }
-    self.printer.dprint("Scopes End\n\n", .{});
+    self.printer.printString("=== SCOPES END ===\n\n");
     self.printer.flush();
 }
 
 fn printScope(self: *File, scope: *std.StringHashMap(Declaration)) void {
     var max_kind_len: usize = 0;
     var max_name_len: usize = 0;
-    var max_smbl_len: usize = 0;
+    var max_symbol_len: usize = 0;
     var it = scope.iterator();
     while (it.next()) |entry| {
         const decl = entry.value_ptr.*;
         const name = entry.key_ptr.*;
 
-        const kind_str = std.fmt.allocPrint(self.allocator, "{any}", .{decl.kind}) catch @panic("OOM");
-        const smbl_str = std.fmt.allocPrint(self.allocator, "{any}", .{decl.symbol_type}) catch @panic("OOM");
-        if (kind_str.len > max_kind_len) max_kind_len = kind_str.len;
+        const kind_len = std.fmt.count("{any}", .{decl.kind});
+        const smbl_len = std.fmt.count("{any}", .{decl.symbol_type});
+        if (kind_len > max_kind_len) max_kind_len = kind_len;
         if (name.len > max_name_len) max_name_len = name.len;
-        if (smbl_str.len > max_smbl_len) max_smbl_len = smbl_str.len;
+        if (smbl_len > max_symbol_len) max_symbol_len = smbl_len;
     }
 
     var scope_it = scope.iterator();
@@ -166,23 +223,19 @@ fn printScope(self: *File, scope: *std.StringHashMap(Declaration)) void {
         const name = entry.key_ptr.*;
         const decl = entry.value_ptr.*;
 
-        const kind_str = std.fmt.allocPrint(self.allocator, "{any}", .{decl.kind}) catch @panic("OOM");
-        self.printer.dprint("  {s}", .{kind_str});
-        for (0..(max_kind_len - kind_str.len)) |_| self.printer.dprint(" ", .{});
-        self.printer.dprint(" | ", .{});
+        self.printer.printString("  ");
+        self.printer.printColor(.Blue, "{any}", .{decl.kind});
+        const kind_len = std.fmt.count("{any}", .{decl.kind});
+        self.printer.pad(max_kind_len - kind_len);
+        self.printer.printString(" | ");
 
-        self.printer.dprint("{s}", .{name});
-        for (0..(max_name_len - name.len)) |_| self.printer.dprint(" ", .{});
-        self.printer.dprint(" | ", .{});
+        self.printer.printColor(.Green, "{s}", .{name});
+        self.printer.pad(max_name_len - name.len);
+        self.printer.printString(" | ");
 
-        const smbl_str = std.fmt.allocPrint(self.allocator, "{any}", .{decl.symbol_type}) catch @panic("OOM");
-        self.printer.dprint(" {s} ", .{smbl_str});
-        for (0..(max_smbl_len - smbl_str.len)) |_| self.printer.dprint(" ", .{});
-        self.printer.dprint(" | ", .{});
-
-        if (decl.node_index) |idx| {
-            self.printer.dprint(" {any}", .{self.ast.items[idx]});
-        }
-        self.printer.dprint("\n", .{});
+        self.printer.printColor(.Cyan, "{any}", .{decl.symbol_type});
+        const symbol_len = std.fmt.count("{any}", .{decl.symbol_type});
+        self.printer.pad(max_symbol_len - symbol_len);
+        self.printer.printString(" |\n");
     }
 }

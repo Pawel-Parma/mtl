@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 const File = @import("file.zig");
 
@@ -7,19 +6,53 @@ const Printer = @This();
 writer: *std.Io.Writer,
 ansi: Ansi,
 
-const Ansi = struct {
+pub const Ansi = struct {
     writer: *std.Io.Writer,
 
-    const Style = enum {
-        Red,
-        Bold,
+    pub const Code = enum {
         Reset,
+        Bold,
 
-        fn code(style: Style) []const u8 {
-            return switch (style) {
-                .Red => "\x1b[31m",
-                .Bold => "\x1b[1m",
+        Black,
+        Red,
+        Green,
+        Yellow,
+        Blue,
+        Magenta,
+        Cyan,
+        White,
+
+        BrightBlack,
+        BrightRed,
+        BrightGreen,
+        BrightYellow,
+        BrightBlue,
+        BrightMagenta,
+        BrightCyan,
+        BrightWhite,
+
+        pub fn code(self: Code) []const u8 {
+            return switch (self) {
                 .Reset => "\x1b[0m",
+                .Bold => "\x1b[1m",
+
+                .Black => "\x1b[30m",
+                .Red => "\x1b[31m",
+                .Green => "\x1b[32m",
+                .Yellow => "\x1b[33m",
+                .Blue => "\x1b[34m",
+                .Magenta => "\x1b[35m",
+                .Cyan => "\x1b[36m",
+                .White => "\x1b[37m",
+
+                .BrightBlack => "\x1b[90m",
+                .BrightRed => "\x1b[91m",
+                .BrightGreen => "\x1b[92m",
+                .BrightYellow => "\x1b[93m",
+                .BrightBlue => "\x1b[94m",
+                .BrightMagenta => "\x1b[95m",
+                .BrightCyan => "\x1b[96m",
+                .BrightWhite => "\x1b[97m",
             };
         }
     };
@@ -28,10 +61,6 @@ const Ansi = struct {
         return .{
             .writer = writer,
         };
-    }
-
-    pub fn apply(self: *const Ansi, style: Style) void {
-        self.writer.print("{s}", .{style.code()}) catch @panic("printing failed\n");
     }
 };
 
@@ -47,20 +76,37 @@ pub fn flush(self: *const Printer) void {
 }
 
 pub fn print(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
-    self.writer.print(fmt, args) catch @panic("prining failed\n");
+    self.writer.print(fmt, args) catch @panic("printing failed\n");
 }
 
-pub fn eprint(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
-    self.ansi.apply(.Bold);
-    self.ansi.apply(.Red);
-    self.print("error: ", .{});
-    self.ansi.apply(.Reset);
+pub fn printString(self: *const Printer, comptime string: []const u8) void {
+    self.print(string, .{});
+}
+
+pub fn applyCode(self: *const Printer, code: Ansi.Code) void {
+    self.print("{s}", .{code.code()});
+}
+
+pub fn printWith(self: *const Printer, codes: anytype, comptime fmt: []const u8, args: anytype) void {
+    inline for (codes) |code| {
+        self.applyCode(code);
+    }
+    self.print(fmt, args);
+    self.applyCode(.Reset);
+}
+
+pub fn printColor(self: *const Printer, code: Ansi.Code, comptime fmt: []const u8, args: anytype) void {
+    self.printWith(.{code}, fmt, args);
+}
+
+pub fn printError(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
+    self.printWith(.{ .Bold, .Red }, "error: ", .{});
     self.print(fmt, args);
 }
 
-pub fn dprint(self: *Printer, comptime fmt: []const u8, args: anytype) void {
-    if (builtin.mode == .Debug) {
-        self.print(fmt, args);
+pub fn pad(self: *const Printer, count: usize) void {
+    for (0..count) |_| {
+        self.printString(" ");
     }
 }
 
@@ -74,11 +120,11 @@ pub fn printSourceLine(
     line: []const u8,
     token_length: usize,
 ) void {
-    self.ansi.apply(.Bold);
+    self.applyCode(.Bold);
     self.print("{s}:{d}:{d} ", .{ file.path, line_number, column });
-    self.ansi.apply(.Red);
+    self.applyCode(.Red);
     self.print("error: ", .{});
-    self.ansi.apply(.Reset);
+    self.applyCode(.Reset);
     self.print(fmt, args);
     self.print("    {s}\n", .{line});
     self.print("    ", .{});

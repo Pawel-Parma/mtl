@@ -37,5 +37,5 @@ const k3: f80 = -j3;
 const l3: f128 = -12;
 const m3: f128 = -l3;
 
-fn main() void {}
+pub fn main() void {}
 

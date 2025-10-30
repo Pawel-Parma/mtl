@@ -93,14 +93,15 @@ fn populateGlobalScope(self: *Semantic) Error!void {
     while (!self.isAtEnd()) {
         const node = self.peek();
         switch (node.kind) {
-            .Declaration => try self.declarationNode(),
-            .Function => try self.functionNode(),
+            .Declaration => try self.declarationNode(false),
+            .Function => try self.functionNode(false),
+            .Public => try self.publicNode(),
             else => self.reportError("Unsupported node for populateGlobalScope: {any}\n", .{node}),
         }
     }
 }
 
-fn declarationNode(self: *Semantic) !void {
+fn declarationNode(self: *Semantic, comptime is_public: bool) !void {
     const declaration = self.peek();
     self.advance();
 
@@ -127,7 +128,11 @@ fn declarationNode(self: *Semantic) !void {
     }
 
     var current_scope = self.getCurrentScope();
-    const kind: Declaration.Kind = if (declaration.token(self.file).?.kind == .Const) .Const else .Var;
+    const kind: Declaration.Kind = switch (declaration.token(self.file).?.kind) {
+        .Const => if (is_public) .PubConst else .Const,
+        .Var => if (is_public) .PubVar else .Var,
+        else => unreachable,
+    };
     try current_scope.put(identifier_name, .{
         .kind = kind,
         .symbol_type = declared_type,
@@ -172,15 +177,14 @@ fn inferType(self: *Semantic, node_index: u32) Declaration.Type {
             }
             self.reportError("Undefined identifier '{s}'\n", .{node_name});
         },
-        .Expression => {
-            return self.inferType(node_index + 1);
-        },
+        .Expression => return self.inferType(node_index + 1),
+        .Grouping => return self.inferType(node_index + 1),
         .Call => {
             const prev_selected = self.file.selected;
             self.file.selected = node_index;
             self.callNode() catch @panic("XDDD"); // TODO: URGENT REMVO
             self.file.selected = prev_selected;
-            return Declaration.Type.Void;
+            return Declaration.Type.Void; // TODO:
         },
         else => self.reportError("Unsupported node for inferType: {any}\n", .{node}),
     }
@@ -198,22 +202,38 @@ fn resolveTypeIdentifier(self: *Semantic, node_index: u32) Declaration.Type {
     self.reportError("Unknown type identifier '{s}'\n", .{node_name});
 }
 
-fn functionNode(self: *Semantic) !void {
+fn functionNode(self: *Semantic, is_public: bool) !void {
+    const kind: Declaration.Kind = if (is_public) .PubFn else .Fn;
     const node_index = self.file.selected;
     self.advanceWithChildren();
     const node_name = self.get(node_index + 1).string(self.file);
     var current_scope = self.getCurrentScope();
     try current_scope.put(node_name, .{
-        .kind = .Function,
+        .kind = kind,
         .symbol_type = .Function,
         .node_index = node_index,
     });
+}
+
+fn publicNode(self: *Semantic) !void {
+    self.advance();
+    const node = self.peek();
+    switch (node.kind) {
+        .Declaration => try self.declarationNode(true),
+        .Function => try self.functionNode(true),
+        else => self.reportError("Unsupported node for publiNode: {any}\n", .{node}),
+    }
 }
 
 fn startAnalisisFromMain(self: *Semantic) !void {
     const main = self.file.global_scope.get("main") orelse {
         self.reportError("Function main not found\n", .{});
     };
+
+    if (main.kind != .PubFn) {
+        self.reportError("Function main has to be public\n", .{});
+    }
+
     const main_index = main.node_index.?;
     const main_arguments = self.get(main_index + 2);
     if (main_arguments.children != 0) {
@@ -251,7 +271,7 @@ fn scopeNode(self: *Semantic) Error!void {
 fn semanticPass(self: *Semantic) Error!void {
     const node = self.peek();
     switch (node.kind) {
-        .Declaration => try self.declarationNode(),
+        .Declaration => try self.declarationNode(false),
         .Scope => try self.scopeNode(),
         .ExpressionStatement => try self.expressionStatementNode(),
         .Return => {}, // TODO:
@@ -290,34 +310,47 @@ fn callNode(self: *Semantic) !void {
 
     // TODO: add support for passing in types as parameters, eg. fn a(T: type, a: T, b: T) T {...}
     const parameters_scope = try File.makeScope(self.allocator);
+    self.printer.print("{any}\n", .{arguments});
+    self.printer.flush();
     if (arguments.children != 0) {
         for (1..arguments_index) |i_usize| {
             const i: u32 = @intCast(i_usize);
-            self.printer.dprint("{any}\n", .{self.get(parameters_index + i)});
+            self.printer.print("{any}\n", .{self.get(parameters_index + i)});
             self.printer.flush();
             const parameter_type = self.inferType(parameters_index + i);
-            self.printer.dprint("{any}\n", .{parameter_type});
-            self.printer.dprint("{any}\n", .{self.get(arguments_index + i)});
+            self.printer.print("{any}\n", .{parameter_type});
+            self.printer.print("{any}\n", .{self.get(arguments_index + i)});
             self.printer.flush();
             const argument_type = self.inferType(arguments_index + i);
-            self.printer.dprint("{any}\n", .{argument_type});
+            self.printer.print("{any}\n", .{argument_type});
             self.printer.flush();
             if (!argument_type.canCastTo(parameter_type)) {
                 self.reportError("Argument type: {any} cannot cast to parameter type: {any}\n", .{ argument_type, parameter_type });
             }
 
-            // const parameter_name = self.get(parameters_index + i).string(self.file);
-            // try parameters_scope.put(parameter_name, .{
-            //     .kind = .Var,
-            //     .symbol_type = ,
-            //     .node_index = expression_index,
-            // });
+            // TODO: does this even execute?
+            const parameter_name = self.get(parameters_index + i).string(self.file);
+            try parameters_scope.put(parameter_name, .{
+                .kind = .Var,
+                .symbol_type = parameter_type,
+                .node_index = parameters_index + i,
+            });
+            self.printer.print(
+                "{any}\n",
+                .{Declaration{
+                    .kind = .Var,
+                    .symbol_type = parameter_type,
+                    .node_index = parameters_index + i,
+                }},
+            );
+            self.printer.flush();
         }
     }
 
     const prev_selected = self.file.selected;
     self.file.selected = function.node_index.? + 4;
     // TODO: add arguments to the scope
+    // TODO: change scope so non globals can be redclared
     try self.file.appendScope(parameters_scope);
     try self.scopeNode();
     self.file.popScope();

@@ -6,7 +6,7 @@ const d: c = c;
 const fp: d = i32;
 const f: fp = 32;
 
-fn main() void {
+pub fn main() void {
 
 }
 

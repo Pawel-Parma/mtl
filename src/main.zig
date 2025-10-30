@@ -29,7 +29,7 @@ pub fn main() u8 {
     const arena_allocator = arena.allocator();
 
     const args = Args.init(base_allocator, printer) catch {
-        printer.eprint("could not allocate program arguments\n", .{});
+        printer.printError("could not allocate program arguments\n", .{});
         return 1;
     };
     defer args.deinit();
@@ -40,7 +40,7 @@ pub fn main() u8 {
 
     // TODO: multifile
     const file_path = args.getMainFilePath() orelse {
-        printer.eprint("did not provide a file path\n", .{});
+        printer.printError("did not provide a file path\n", .{});
         args.printUsage();
         return 0;
     };
@@ -52,7 +52,7 @@ pub fn main() u8 {
     var tokenizer = Tokenizer.init(arena_allocator, printer, &file);
     tokenizer.tokenize() catch |err| switch (err) {
         error.OutOfMemory => {
-            printer.eprint("tokenization failed, OutOfMemory\n", .{});
+            printer.printError("tokenization failed, OutOfMemory\n", .{});
             return 3;
         },
         else => return 0,
@@ -61,7 +61,7 @@ pub fn main() u8 {
     var parser = Parser.init(arena_allocator, printer, &file);
     parser.parse() catch |err| switch (err) {
         error.OutOfMemory => {
-            printer.eprint("parsing failed, OutOfMemory\n", .{});
+            printer.printError("parsing failed, OutOfMemory\n", .{});
             return 4;
         },
         else => return 0,
@@ -70,7 +70,7 @@ pub fn main() u8 {
     var semantic = Semantic.init(arena_allocator, printer, &file);
     semantic.analyze() catch |err| switch (err) {
         error.OutOfMemory => {
-            printer.eprint("semantic analusis failed, OutOfMemory\n", .{});
+            printer.printError("semantic analusis failed, OutOfMemory\n", .{});
             return 5;
         },
         else => return 0,

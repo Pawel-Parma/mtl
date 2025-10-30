@@ -36,7 +36,7 @@ fn f7() void {
 } 
 fn f8() void {}
 
-fn main() void {
+pub fn main() void {
     f1();
     const a = f2();
     const b = f3();
