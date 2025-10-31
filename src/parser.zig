@@ -169,8 +169,9 @@ fn parseDeclaration(self: *Parser) !void {
 }
 
 fn parseFunction(self: *Parser) !void {
+    const fn_index = self.file.current;
     _ = try self.expect(.Fn);
-    try self.pushNode(.{ .kind = .Function, .children = 4 });
+    try self.pushNode(.{ .kind = .Function, .children = 4, .token_index = fn_index });
 
     const identifier_index = self.file.current;
     _ = try self.expect(.Identifier);
@@ -332,6 +333,8 @@ fn parseArguments(self: *Parser) ![]Node {
     try arguments.append(self.allocator, .{ .kind = .Arguments, .children = 0 });
     var children: u32 = 0;
     while (!self.isAtEnd() and self.peek().kind != .ParenRight) : (children += 1) {
+        try arguments.append(self.allocator, .{ .kind = .Argument, .children = 1 });
+        try arguments.append(self.allocator, .{ .kind = .Expression, .children = 1 });
         const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
         try arguments.appendSlice(self.allocator, expression);
         if (self.peek().kind == .Comma) {

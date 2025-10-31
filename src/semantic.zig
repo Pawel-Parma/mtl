@@ -37,14 +37,20 @@ inline fn advanceGetIndex(self: *Semantic) u32 {
     return self.file.selected - 1;
 }
 
-fn advanceWithChildren(self: *Semantic) void {
-    var to_advance = self.peek().children;
-    self.advance();
-    while (!self.isAtEnd() and to_advance != 0) {
-        to_advance += self.peek().children;
+fn toAdvanceWithChildren(self: *Semantic, node_index: u32) u32 {
+    var to_advance = self.get(node_index).children;
+    var selected = node_index + 1;
+    while (!self.isIndexAtEnd(selected) and to_advance != 0) {
+        to_advance += self.get(selected).children;
         to_advance -= 1;
-        self.advance();
+        selected += 1;
     }
+    return selected - node_index;
+}
+
+fn advanceWithChildren(self: *Semantic) void {
+    const to_advance = self.toAdvanceWithChildren(self.file.selected);
+    self.file.selected += to_advance;
 }
 
 inline fn peek(self: *Semantic) Node {
@@ -55,8 +61,12 @@ inline fn get(self: *Semantic, node_index: u32) Node {
     return self.file.ast.items[node_index];
 }
 
+inline fn isIndexAtEnd(self: *Semantic, token_index: u32) bool {
+    return token_index >= self.file.ast.items.len;
+}
+
 inline fn isAtEnd(self: *Semantic) bool {
-    return self.file.selected >= self.file.ast.items.len;
+    return self.isIndexAtEnd(self.file.selected);
 }
 
 fn getIfInScope(self: *Semantic, identifier: []const u8) ?Declaration {
@@ -121,7 +131,7 @@ fn declarationNode(self: *Semantic, comptime is_public: bool) !void {
     const expression_index = self.file.selected;
     self.advanceWithChildren();
 
-    const expression_type = self.inferType(expression_index);
+    const expression_type = try self.inferType(expression_index);
     const declared_type = if (type_identifier.token_index) |_| self.resolveTypeIdentifier(type_index) else expression_type;
     if (!declared_type.equals(expression_type)) {
         self.reportError("Type mismatch in declaration of '{s}', expected {any}, got {any}\n", .{ identifier_name, declared_type, expression_type });
@@ -140,21 +150,21 @@ fn declarationNode(self: *Semantic, comptime is_public: bool) !void {
     });
 }
 
-fn inferType(self: *Semantic, node_index: u32) Declaration.Type {
+fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
     const node = self.get(node_index);
     switch (node.kind) {
         .IntLiteral => return .ComptimeInt,
         .FloatLiteral => return .ComptimeFloat,
         .UnaryMinus => {
-            const child_type = self.inferType(node_index + 1);
+            const child_type = try self.inferType(node_index + 1);
             if (!child_type.allowsOperation(.UnaryMinus)) {
                 self.reportError("Operation {any} is not allowed on type {any}\n", .{ node.kind, child_type });
             }
             return child_type;
         },
         .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash => {
-            const left_type = self.inferType(node_index + 1);
-            const right_type = self.inferType(node_index + 2);
+            const left_type = try self.inferType(node_index + 1);
+            const right_type = try self.inferType(node_index + 2);
             if (left_type.equals(right_type)) {
                 if (!left_type.allowsOperation(node.kind)) {
                     self.reportError("Operation {any} is not allowed on type {any}\n", .{ node.kind, left_type });
@@ -177,14 +187,24 @@ fn inferType(self: *Semantic, node_index: u32) Declaration.Type {
             }
             self.reportError("Undefined identifier '{s}'\n", .{node_name});
         },
-        .Expression => return self.inferType(node_index + 1),
-        .Grouping => return self.inferType(node_index + 1),
+        .Expression => return try self.inferType(node_index + 1),
+        .Grouping => return try self.inferType(node_index + 1),
         .Call => {
             const prev_selected = self.file.selected;
             self.file.selected = node_index;
-            self.callNode() catch @panic("XDDD"); // TODO: URGENT REMVO
+            try self.callNode();
             self.file.selected = prev_selected;
-            return Declaration.Type.Void; // TODO:
+            const function_identifier = self.get(node_index + 1);
+            const function_name = function_identifier.string(self.file);
+            if (self.getIfInScope(function_name)) |declaration| {
+                const function_index = declaration.node_index.?;
+                const function_type_index = function_index + 2 + self.toAdvanceWithChildren(function_index + 2);
+                const function_type_identifier = self.get(function_type_index);
+                return Declaration.Type.lookup(function_type_identifier.string(self.file)) orelse {
+                    self.reportError("{any} is not a primitive type\n", .{function_type_identifier});
+                };
+            }
+            self.reportError("Undefined identifier '{s}'\n", .{function_name});
         },
         else => self.reportError("Unsupported node for inferType: {any}\n", .{node}),
     }
@@ -292,12 +312,13 @@ fn callNode(self: *Semantic) !void {
     // TODO: check returns
     self.advance();
     const function_indentifier = self.peek();
+    self.advance();
     const function_name = function_indentifier.string(self.file);
     const function = self.getIfInScope(function_name) orelse {
         self.reportError("Undefined function '{s}'\n", .{function_name});
     };
 
-    const parameters_index = function.node_index.? + 1;
+    const parameters_index = function.node_index.? + 2;
     const parameters = self.get(parameters_index);
 
     const arguments_index = self.file.selected;
@@ -310,50 +331,33 @@ fn callNode(self: *Semantic) !void {
 
     // TODO: add support for passing in types as parameters, eg. fn a(T: type, a: T, b: T) T {...}
     const parameters_scope = try File.makeScope(self.allocator);
-    self.printer.print("{any}\n", .{arguments});
-    self.printer.flush();
-    if (arguments.children != 0) {
-        for (1..arguments_index) |i_usize| {
-            const i: u32 = @intCast(i_usize);
-            self.printer.print("{any}\n", .{self.get(parameters_index + i)});
-            self.printer.flush();
-            const parameter_type = self.inferType(parameters_index + i);
-            self.printer.print("{any}\n", .{parameter_type});
-            self.printer.print("{any}\n", .{self.get(arguments_index + i)});
-            self.printer.flush();
-            const argument_type = self.inferType(arguments_index + i);
-            self.printer.print("{any}\n", .{argument_type});
-            self.printer.flush();
-            if (!argument_type.canCastTo(parameter_type)) {
-                self.reportError("Argument type: {any} cannot cast to parameter type: {any}\n", .{ argument_type, parameter_type });
-            }
-
-            // TODO: does this even execute?
-            const parameter_name = self.get(parameters_index + i).string(self.file);
-            try parameters_scope.put(parameter_name, .{
-                .kind = .Var,
-                .symbol_type = parameter_type,
-                .node_index = parameters_index + i,
-            });
-            self.printer.print(
-                "{any}\n",
-                .{Declaration{
-                    .kind = .Var,
-                    .symbol_type = parameter_type,
-                    .node_index = parameters_index + i,
-                }},
-            );
-            self.printer.flush();
+    var i: u32 = 1;
+    var j: u32 = 1;
+    while (i < arguments.children * 3) {
+        const parameter_identifier = self.get(parameters_index + i + 1);
+        const parameter_identifier_type = self.get(parameters_index + i + 2);
+        const parameter_type = Declaration.Type.lookup(parameter_identifier_type.string(self.file)) orelse {
+            self.reportError("{any} is not a primitive type\n", .{parameter_identifier_type});
+        };
+        const argument_type = try self.inferType(arguments_index + j + 1);
+        if (!argument_type.canCastTo(parameter_type)) {
+            self.reportError("argument type: {any} cannot cast to parameter type: {any}\n", .{ argument_type, parameter_type });
         }
+        const parameter_name = parameter_identifier.string(self.file);
+        try parameters_scope.put(parameter_name, .{
+            .kind = .Var,
+            .symbol_type = parameter_type,
+            .node_index = parameters_index + i,
+        });
+        i += 3;
+        j += self.toAdvanceWithChildren(arguments_index + j);
     }
 
     const prev_selected = self.file.selected;
     self.file.selected = function.node_index.? + 4;
-    // TODO: add arguments to the scope
     // TODO: change scope so non globals can be redclared
     try self.file.appendScope(parameters_scope);
     try self.scopeNode();
     self.file.popScope();
     self.file.selected = prev_selected;
-    self.advance();
 }

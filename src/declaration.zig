@@ -19,6 +19,8 @@ pub const Kind = enum {
 };
 
 pub const Type = enum {
+    NotAnalized,
+
     I8,
     I16,
     I32,

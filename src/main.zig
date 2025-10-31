@@ -13,22 +13,13 @@ pub fn main() u8 {
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &stdout_writer.interface;
     const printer = Printer.init(stdout);
-    defer printer.flush();
 
-    var debug_allocator = std.heap.DebugAllocator(.{}).init;
-    defer switch (debug_allocator.deinit()) {
-        .leak => @panic("Memory leak detected\n"),
-        .ok => {},
-    };
-    const base_allocator = switch (build.mode) {
-        .Debug => debug_allocator.allocator(),
-        else => std.heap.page_allocator,
-    };
-    var arena = std.heap.ArenaAllocator.init(base_allocator);
+    const allocator = std.heap.page_allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const arena_allocator = arena.allocator();
 
-    const args = Args.init(base_allocator, printer) catch {
+    const args = Args.init(allocator, printer) catch {
         printer.printError("could not allocate program arguments\n", .{});
         return 1;
     };
@@ -45,7 +36,7 @@ pub fn main() u8 {
         return 0;
     };
     var file = File.init(arena_allocator, printer, file_path) catch |err| {
-        printer.print("Error: {any}, failed to read file: {s}\n", .{ err, file_path });
+        printer.printError("{any}, failed to read file: {s}\n", .{ err, file_path });
         return 2;
     };
 

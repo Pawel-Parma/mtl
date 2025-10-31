@@ -1,10 +1,10 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 const Printer = @import("printer.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
 const Declaration = @import("declaration.zig");
+const options = @import("options.zig");
 
 // TODO: refactor entire file
 const File = @This();
@@ -91,7 +91,7 @@ pub fn lineInfo(self: *File, token: Token) struct {
 }
 
 pub fn printTokens(self: *File) void {
-    if (builtin.mode != .Debug) {
+    if (!options.debug) {
         return;
     }
     self.printer.printString("\n=== TOKENS (");
@@ -123,7 +123,7 @@ pub fn printTokens(self: *File) void {
 }
 
 pub fn printAst(self: *File) void {
-    if (builtin.mode != .Debug) {
+    if (!options.debug) {
         return;
     }
     self.printer.printString("\n=== AST (");
@@ -181,7 +181,7 @@ pub fn printAst(self: *File) void {
 }
 
 pub fn printScopes(self: *File) void {
-    if (builtin.mode != .Debug) {
+    if (!options.debug) {
         return;
     }
     self.printer.printString("\n=== SCOPES (");

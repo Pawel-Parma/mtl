@@ -2,6 +2,7 @@ const std = @import("std");
 const exit = std.process.exit;
 
 const Printer = @import("printer.zig");
+const options = @import("options.zig");
 
 const Args = @This();
 allocator: std.mem.Allocator,
@@ -38,6 +39,9 @@ pub fn process(self: *const Args) bool {
     if (self.conatins("--version") or self.conatins("-v")) {
         self.printVersion();
         return true;
+    }
+    if (self.conatins("--debug")) {
+        options.debug = true;
     }
     return false;
 }

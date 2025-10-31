@@ -29,6 +29,7 @@ pub const Kind = enum {
     Function,
     Parameter,
     Parameters,
+    Argument,
     Arguments,
     Return,
 
