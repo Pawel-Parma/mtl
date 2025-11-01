@@ -79,28 +79,29 @@ pub fn print(self: *const Printer, comptime fmt: []const u8, args: anytype) void
     self.writer.print(fmt, args) catch @panic("printing failed\n");
 }
 
-pub fn printString(self: *const Printer, comptime string: []const u8) void {
-    self.print(string, .{});
+pub fn printString(self: *const Printer, string: []const u8) void {
+    self.print("{s}", .{string});
 }
 
 pub fn applyCode(self: *const Printer, code: Ansi.Code) void {
     self.print("{s}", .{code.code()});
 }
 
-pub fn printWith(self: *const Printer, codes: anytype, comptime fmt: []const u8, args: anytype) void {
-    inline for (codes) |code| {
-        self.applyCode(code);
-    }
+pub fn printColorFmt(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
+    self.print(resolveColorFmt(fmt), args);
+}
+
+pub fn printColor(self: *const Printer, code: Ansi.Code, comptime fmt: []const u8, args: anytype) void {
+    self.applyCode(code);
     self.print(fmt, args);
     self.applyCode(.Reset);
 }
 
-pub fn printColor(self: *const Printer, code: Ansi.Code, comptime fmt: []const u8, args: anytype) void {
-    self.printWith(.{code}, fmt, args);
-}
-
 pub fn printError(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
-    self.printWith(.{ .Bold, .Red }, "error: ", .{});
+    self.applyCode(.Bold);
+    self.applyCode(.Red);
+    self.printString("error: ");
+    self.applyCode(.Reset);
     self.print(fmt, args);
 }
 
@@ -138,4 +139,53 @@ pub fn printSourceLine(
         self.print("~", .{});
     }
     self.print("\n", .{});
+}
+
+fn resolveColorFmt(comptime fmt: []const u8) []const u8 {
+    const fields = @typeInfo(Ansi.Code).@"enum".fields;
+    const open_char = '<';
+    const close_char = '>';
+    const sep_char = ':';
+
+    comptime var out: []const u8 = "";
+    comptime var i: usize = 0;
+    while (i < fmt.len) : (i += 1) {
+        if (fmt[i] != open_char) {
+            out = out ++ fmt[i .. i + 1];
+            continue;
+        }
+        const end_idx = std.mem.indexOfScalarPos(u8, fmt, i + 1, close_char) orelse {
+            out = out ++ fmt[i .. i + 1];
+            continue;
+        };
+        const inner = fmt[i + 1 .. end_idx];
+        if (std.mem.indexOfScalar(u8, inner, sep_char)) |colon_idx| {
+            const color_name = inner[0..colon_idx];
+            const rest = inner[colon_idx + 1 ..];
+            const color_opt = lookupAnsiCode(color_name, fields);
+            if (color_opt) |color| {
+                const inner_resolved = resolveColorFmt(rest);
+                out = out ++ color.code() ++ inner_resolved ++ Ansi.Code.Reset.code();
+                i = end_idx;
+                continue;
+            }
+        } else {
+            const code_opt = lookupAnsiCode(inner, fields);
+            if (code_opt) |code| {
+                out = out ++ code.code();
+                i = end_idx;
+                continue;
+            }
+        }
+        out = out ++ fmt[i .. i + 1];
+    }
+    return out;
+}
+
+fn lookupAnsiCode(name: []const u8, fields: anytype) ?Ansi.Code {
+    inline for (fields) |f| {
+        if (std.mem.eql(u8, f.name, name))
+            return @field(Ansi.Code, f.name);
+    }
+    return null;
 }

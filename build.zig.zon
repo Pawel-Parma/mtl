@@ -2,8 +2,8 @@
     .name = .mtl,
     .version = "0.0.0",
     .fingerprint = 0xb01910e0c0ff66f9,
-
-    .minimum_zig_version = "0.16.0-dev.27+83f773fc6",
+    .minimum_zig_version = "0.16.0-dev.368+2a97e0af6",
+    .maximum_zig_version = "0.16.0-dev.368+2a97e0af6",
     .dependencies = .{},
     .paths = .{
         "build.zig",

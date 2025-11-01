@@ -24,7 +24,7 @@ pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Semanti
 pub fn analyze(self: *Semantic) !void {
     // TODO: make global scope lazily analyzed
     try self.populateGlobalScope();
-    try self.startAnalisisFromMain();
+    try self.startAnalysisFromMain();
     self.file.printScopes();
 }
 
@@ -177,7 +177,7 @@ fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
             self.reportError("Type mismatch in binary operator, expected {any}, got {any}\n", .{ left_type, right_type });
         },
         .Identifier => {
-            // change for lazy analisis, as identifiers may not be in scope yet
+            // change for lazy analysis, as identifiers may not be in scope yet
             const node_name = node.string(self.file);
             if (Declaration.Type.isPrimitive(node_name)) {
                 return .Type;
@@ -211,7 +211,7 @@ fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
 }
 
 fn resolveTypeIdentifier(self: *Semantic, node_index: u32) Declaration.Type {
-    // change for lazy analisis, as identifiers may not be in scope yet
+    // change for lazy analysis, as identifiers may not be in scope yet
     const node = self.get(node_index);
     const node_name = node.string(self.file);
     if (Declaration.Type.lookup(node_name)) |t| {
@@ -241,11 +241,11 @@ fn publicNode(self: *Semantic) !void {
     switch (node.kind) {
         .Declaration => try self.declarationNode(true),
         .Function => try self.functionNode(true),
-        else => self.reportError("Unsupported node for publiNode: {any}\n", .{node}),
+        else => self.reportError("Unsupported node for publicNode: {any}\n", .{node}),
     }
 }
 
-fn startAnalisisFromMain(self: *Semantic) !void {
+fn startAnalysisFromMain(self: *Semantic) !void {
     const main = self.file.global_scope.get("main") orelse {
         self.reportError("Function main not found\n", .{});
     };
@@ -263,8 +263,9 @@ fn startAnalisisFromMain(self: *Semantic) !void {
     const main_return_type = self.get(main_index + 3).string(self.file);
     var is_one_of_allowed_return_types = false;
     inline for (main_allowed_return_types) |t| {
-        if (!std.mem.eql(u8, main_return_type, t)) {
+        if (std.mem.eql(u8, main_return_type, t)) {
             is_one_of_allowed_return_types = true;
+            break;
         }
     }
     if (!is_one_of_allowed_return_types) {
@@ -304,7 +305,7 @@ fn expressionStatementNode(self: *Semantic) !void {
     const node = self.peek();
     switch (node.kind) {
         .Call => try self.callNode(),
-        else => self.reportError("Unsupported node for expressioonStatement: {any}\n", .{node}),
+        else => self.reportError("Unsupported node for expressionStatement: {any}\n", .{node}),
     }
 }
 
