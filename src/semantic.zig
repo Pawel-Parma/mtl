@@ -197,6 +197,9 @@ fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
             const function_identifier = self.get(node_index + 1);
             const function_name = function_identifier.string(self.file);
             if (self.getIfInScope(function_name)) |declaration| {
+                if (declaration.kind != .Fn and declaration.kind != .PubFn) {
+                    self.reportError("{s} is not a function\n", .{function_name});
+                }
                 const function_index = declaration.node_index.?;
                 const function_type_index = function_index + 2 + self.toAdvanceWithChildren(function_index + 2);
                 const function_type_identifier = self.get(function_type_index);
@@ -295,7 +298,7 @@ fn semanticPass(self: *Semantic) Error!void {
         .Declaration => try self.declarationNode(false),
         .Scope => try self.scopeNode(),
         .ExpressionStatement => try self.expressionStatementNode(),
-        .Return => {}, // TODO:
+        .Return => try self.returnNode(),
         else => self.reportError("Unsupported node for semanticPass: {any}\n", .{node}),
     }
 }
@@ -310,7 +313,6 @@ fn expressionStatementNode(self: *Semantic) !void {
 }
 
 fn callNode(self: *Semantic) !void {
-    // TODO: check returns
     self.advance();
     const function_indentifier = self.peek();
     self.advance();
@@ -330,7 +332,7 @@ fn callNode(self: *Semantic) !void {
         self.reportError("Number of arguments does not match number of parameters", .{});
     }
 
-    // TODO: add support for passing in types as parameters, eg. fn a(T: type, a: T, b: T) T {...}
+    // TODO: add support for passing in types as parameters, eg. fn a(T: type, a: T, b: T) T {...}, same as lazy analysis
     const parameters_scope = try File.makeScope(self.allocator);
     var i: u32 = 1;
     var j: u32 = 1;
@@ -355,10 +357,15 @@ fn callNode(self: *Semantic) !void {
     }
 
     const prev_selected = self.file.selected;
-    self.file.selected = function.node_index.? + 4;
+    self.file.selected = function.node_index.? + 3 + self.toAdvanceWithChildren(function.node_index.? + 2);
     // TODO: change scope so non globals can be redclared
     try self.file.appendScope(parameters_scope);
     try self.scopeNode();
     self.file.popScope();
     self.file.selected = prev_selected;
+}
+
+fn returnNode(self: *Semantic) !void {
+    // TODO: check returns
+    _ = self;
 }

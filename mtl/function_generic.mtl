@@ -1,0 +1,114 @@
+pub fn main() void {
+    const imain = 0;
+    const T = i;
+    ff0();
+    ff1(T, 1);
+    ff2(T, 1, 2);
+    ff3(T, 1, 2, 3);
+    ff4(T, 1, 2, 3, 4);
+    ff5(T, 1, 2, 3, 4, 5);
+    ff6(T, 1, 2, 3, 4, 5, 6);
+    ff7(T, 1, 2, 3, 4, 5, 6, 7);
+    ff8(T, 1, 2, 3, 4, 5, 6, 7, 8);
+    ff9(T, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    f1();
+    f2();
+    const b = f3(T);
+    const c = f4(T); 
+    const d = f5(T, b + 1, c * 2); 
+    const e = f6(T, b / 2);
+    const f = f7(T, 0);
+    const g = f8(T, 0);
+    f9(i128);
+    f9(i64);
+    f9(i32);
+    f9(i16);
+    f9(i8);
+    f9(u128);
+    f9(u64);
+    f9(u32);
+    f9(u16);
+    f9(u8);
+    f9(f128);
+    f9(f80);
+    f9(f64);
+    f9(f32);
+    f9(f16);
+    return;
+}
+
+fn ff0() void { const iff0 = 0; }
+fn ff1(T: type, a: T) void { const iff1 = 1; }
+fn ff2(T: type, a: T, b: T) void { const iff2 = 2; }
+fn ff3(T: type, a: T, b: T, c: T) void { const iff3 = 3; }
+fn ff4(T: type, a: T, b: T, c: T, d: T) void { const iff4 = 4; }
+fn ff5(T: type, a: T, b: T, c: T, d: T, e: T) void { const iff5 = 5; }
+fn ff6(T: type, a: T, b: T, c: T, d: T, e: T, f: T) void { const iff6 = 6; }
+fn ff7(T: type, a: T, b: T, c: T, d: T, e: T, f: T, g: T) void { const iff7 = 7; }
+fn ff8(T: type, a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T) void { const iff8 = 8; }
+fn ff9(T: type, a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T) void { const iff9 = 9; }
+
+fn f1() void {
+    const if1 = 0;
+}
+
+fn f2() void {
+    const if2 = 0;
+    return;
+}
+
+fn f3(T: type) T {
+    const if3 = 0;
+    return 1;
+}
+
+fn f4(T: type) T {
+    const if4 = 0;
+    return f3(T) + 1;
+}
+
+fn f5(T: type, a: T, b: T) T { 
+    const if5 = 0; 
+    return a + b;
+}
+
+fn f6(T: type, a: T) T {
+    const if6 = 0;
+    const b = a + 12; 
+    return f5(T, a, b) + b;
+}
+
+fn f7(T: type, a: T) T {
+    const if7 = 0;
+    return f6(T, a + 1);
+}
+
+fn f8(T: type, a: T) T {
+    const if8 = 0; 
+    const f = f8(T, a + 1);
+    return f;
+}
+
+fn f9(T: type) void {
+    const imain = 0;
+    ff0();
+    ff1(T, 1);
+    ff2(T, 1, 2);
+    ff3(T, 1, 2, 3);
+    ff4(T, 1, 2, 3, 4);
+    ff5(T, 1, 2, 3, 4, 5);
+    ff6(T, 1, 2, 3, 4, 5, 6);
+    ff7(T, 1, 2, 3, 4, 5, 6, 7);
+    ff8(T, 1, 2, 3, 4, 5, 6, 7, 8);
+    ff9(T, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+    f1();
+    f2();
+    const b = f3(T);
+    const c = f4(T); 
+    const d = f5(T, b + 1, c * 2); 
+    const e = f6(T, b / 2);
+    const f = f7(T, 0);
+    const g = f8(T, 0);
+    f9();
+    return;
+} 

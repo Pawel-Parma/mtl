@@ -1,4 +1,62 @@
-const myi32 = i32;
-var vartypemyi32: myi32 = i32;
-var gtype: u32 = 1231;
-var wtype: f32 = gtype;
+const int = i32;
+var a: int = 1 + 1;
+var b := a + - 1;
+var c := 123 / b;
+var d := c * 123;
+var e := (1 + 2) * 3;
+var f := 1 + 2 * 3;
+var g := (1 + 2) * (3 - 4);
+var h := -1 + 2;
+var i := -(-1);
+var k := 1 + 2 + 3 + 4;
+var l := 1 * 2 / 3 * 4;
+var m := 1 + -2 * -(3 + 4);
+const n = 123 ;
+const o = m;
+const p: i32 = 123;
+var q: i32 = 21;
+var r := p;
+var s: i32 = r;
+var t := 123;
+// asadadadsad asadadadsad
+const u = 1;
+const v = 1;
+const w = 1;
+const x = 1;
+const y = 1;
+const z = 1;
+const expr0 = a * b + c / d - e * f + g / h - i * j / k + l - m / n * o + p * q - r / s + t * u / v - w + x / y * z;
+
+const expr1 = a * b + c / d - e * f;
+const expr2 = -a + c * -g;
+const expr3 = (a) + (a + a) * (a);
+const expr4 = (a + a + a) * -a;
+const expr5 = (a * (b + c) - (d / (e - f))) + (g * h - (i + j / (k - l))) / m;
+
+const tt: type = type;
+const ta: tt = tt;
+const tb: ta = ta;
+const tc: tb = tb;
+const td: tc = tc;
+const tfp: td = i32;
+const nf: tfp = 32;
+
+
+pub fn main() void {
+    {
+        var n0m := 1 + -2 * -(3 + 4);
+
+        {}
+    }
+    {
+        var n0m := 2; 
+    }
+    {
+        var n0m := 2; 
+    }
+    {
+        var n0m: i32 = 2;
+    }
+    const aaa = 1;
+}
+

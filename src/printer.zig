@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const Token = @import("token.zig");
 const File = @import("file.zig");
 
 const Printer = @This();
@@ -87,11 +88,11 @@ pub fn applyCode(self: *const Printer, code: Ansi.Code) void {
     self.print("{s}", .{code.code()});
 }
 
-pub fn printColorFmt(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
+pub fn printColor(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
     self.print(resolveColorFmt(fmt), args);
 }
 
-pub fn printColor(self: *const Printer, code: Ansi.Code, comptime fmt: []const u8, args: anytype) void {
+pub fn printCode(self: *const Printer, code: Ansi.Code, comptime fmt: []const u8, args: anytype) void {
     self.applyCode(code);
     self.print(fmt, args);
     self.applyCode(.Reset);
@@ -116,13 +117,13 @@ pub fn printSourceLine(
     comptime fmt: []const u8,
     args: anytype,
     file: *File,
-    line_number: usize,
-    column: usize,
-    line: []const u8,
-    token_length: usize,
+    token: Token,
 ) void {
+    const line_info = file.lineInfo(token);
+    const column = token.start - line_info.start;
+    const line = File.getLine(file.buffer, line_info.start, token.start, @intCast(file.buffer.len));
     self.applyCode(.Bold);
-    self.print("{s}:{d}:{d} ", .{ file.path, line_number, column });
+    self.print("{s}:{d}:{d} ", .{ file.path, line_info.number, column });
     self.applyCode(.Red);
     self.print("error: ", .{});
     self.applyCode(.Reset);
@@ -135,7 +136,7 @@ pub fn printSourceLine(
     }
     self.print("^", .{});
     var j: usize = 1;
-    while (j < token_length and column + j < line.len and line[column + j] != '\n') : (j += 1) {
+    while (j < token.len() and column + j < line.len and line[column + j] != '\n') : (j += 1) {
         self.print("~", .{});
     }
     self.print("\n", .{});

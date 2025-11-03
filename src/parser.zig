@@ -11,8 +11,6 @@ printer: Printer,
 file: *File,
 
 pub const Error = error{
-    UnexpectedToken,
-    UnexpectedEof,
     ParsingFailed,
 } || std.mem.Allocator.Error;
 
@@ -128,18 +126,11 @@ fn nodesToHeapSlice(self: *Parser, nodes: anytype) ![]Node {
 }
 
 fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) Error {
-    // TODO:
     self.file.success = false;
     const len: u32 = @intCast(self.file.buffer.len);
-    const token = if (self.isAtEnd()) Token{ .kind = .Invalid, .start = len, .end = len } else self.peek();
-    const err = if (self.isAtEnd()) error.UnexpectedEof else error.UnexpectedToken;
-
-    const line_info = self.file.lineInfo(token);
-    const column_number = token.start - line_info.start;
-    const line = File.getLine(self.file.buffer, line_info.start, token.start, len);
-
-    self.printer.printSourceLine(fmt, args, self.file, line_info.number, column_number, line, token.len());
-    return err;
+    const token = if (self.isAtEnd()) Token{ .kind = .Eof, .start = len, .end = len } else self.peek();
+    self.printer.printSourceLine(fmt, args, self.file, token);
+    return Error.ParsingFailed;
 }
 
 fn parseDeclaration(self: *Parser) !void {
@@ -230,7 +221,6 @@ fn parseBlock(self: *Parser) Error!void {
     var children: u32 = 0;
     while (!self.isAtEnd() and self.peek().kind != .CurlyRight) {
         self.parseNode() catch {
-            self.printer.print("PA FAIL\n", .{});
             self.synchronize();
             continue;
         };
@@ -244,20 +234,19 @@ fn parseBlock(self: *Parser) Error!void {
 fn parseReturn(self: *Parser) !void {
     const return_index = self.file.current;
     _ = try self.expect(.Return);
-    try self.pushNode(.{ .kind = .Return, .children = 1, .token_index = return_index });
+    try self.pushNode(.{ .kind = .Return, .children = 0, .token_index = return_index });
 
     if (!self.isAtEnd() and self.peek().kind != .SemiColon) {
+        self.file.ast.items[self.lastPushedIndex()].children = 1;
         try self.parseExpression();
     }
     _ = try self.expect(.SemiColon);
 }
 
-fn parseExpressionStatement(self: *Parser) !void { // TODO:
+fn parseExpressionStatement(self: *Parser) !void {
     try self.pushNode(.{ .kind = .ExpressionStatement, .children = 1 });
-    const expressions = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-    for (expressions) |expression| {
-        try self.pushNode(expression);
-    }
+    const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+    try self.file.ast.appendSlice(self.allocator, expression);
     _ = try self.expect(.SemiColon);
 }
 
@@ -292,13 +281,16 @@ fn parsePrefix(self: *Parser) Error![]Node {
             const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Prefix);
             return self.nodesToHeapSlice(.{ minus, expression });
         },
-        .ParenLeft => { // TODO:
+        .ParenLeft => {
             const grouping = Node{ .kind = .Grouping, .children = 1, .token_index = token_index };
             const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
             _ = try self.expect(.ParenRight);
             return self.nodesToHeapSlice(.{ grouping, expression });
         },
-        else => return self.reportError("Unexpected prefix: {any}\n", .{token.kind}),
+        else => {
+            self.file.current -= 1;
+            return self.reportError("Unexpected prefix: {any}\n", .{token.kind});
+        },
     }
 }
 
@@ -324,7 +316,10 @@ fn parseInfixOrSuffix(self: *Parser, left: []Node) ![]Node {
             _ = try self.expect(.ParenRight);
             return self.nodesToHeapSlice(.{ call, left, arguments });
         },
-        else => return self.reportError("Unexpected infix or suffix: {any}\n", .{token.kind}),
+        else => {
+            self.file.current -= 1;
+            return self.reportError("Unexpected infix or suffix: {any}\n", .{token.kind});
+        },
     }
 }
 

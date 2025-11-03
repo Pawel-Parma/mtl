@@ -29,7 +29,6 @@ pub fn main() u8 {
         return Code.Success;
     }
 
-    // TODO: multifile
     const file_path = args.getMainFilePath() orelse {
         printer.printError("Did not provide a file path\n", .{});
         args.printUsage();
@@ -47,8 +46,8 @@ pub fn main() u8 {
     };
 
     var parser = Parser.init(arena_allocator, printer, &file);
-    parser.parse() catch |err| {
-        printer.printError("Parsing failed: {any}\n", .{err});
+    parser.parse() catch {
+        printer.printError("Parsing failed\n", .{});
         return Code.ParsingFailed;
     };
 

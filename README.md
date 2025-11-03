@@ -27,14 +27,17 @@ When debug mode is enabled Tokens, AST and Scopes will be printed when available
 
 ## Example programs
 
-1. Minimal empty program
+1. Minimal empty program:  
+
 Each entrypoint file requires a public main function.  
 ```mtl
 pub fn main() void {
 
 }
 ```
-2. Variable declaration
+
+2. Variable declaration:
+
 ```mtl
 pub fn main() void {
     const a: u32 = 12;
@@ -47,10 +50,12 @@ pub fn main() void {
 }
 ```
 
-3. Function declaration
+3. Function declaration:
+
 ```mtl
 pub fn main() void {
-    return add(1, 2);
+    const a = add(1, 2);
+    return;
 }
 
 fn add(a: u8, b: u8) u8 {

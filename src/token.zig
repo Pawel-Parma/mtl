@@ -8,7 +8,8 @@ start: u32,
 end: u32,
 
 pub const Kind = enum {
-    Invalid,
+    InvalidByte,
+    Eof,
 
     Plus,
     Minus,

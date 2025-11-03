@@ -9,9 +9,7 @@ allocator: std.mem.Allocator,
 printer: Printer,
 file: *File,
 
-pub const Error = error{
-    TokenizingFailed,
-} || std.mem.Allocator.Error;
+pub const Error = error{} || std.mem.Allocator.Error;
 
 pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Tokenizer {
     return .{
@@ -31,27 +29,12 @@ pub fn tokenize(self: *Tokenizer) Error!void {
         }
         try self.file.tokens.append(self.allocator, token);
     }
-    if (!self.file.success) {
-        return Error.TokenizingFailed;
-    }
-    self.file.printTokens();
-}
-
-pub fn tokenizeFmt(self: *Tokenizer) Error!void {
-    try self.file.ensureTokensCapacity();
-    while (!self.isAtEnd()) {
-        const token = self.nextToken();
-        try self.file.tokens.append(self.allocator, token);
-    }
-    if (!self.file.success) {
-        return Error.TokenizingFailed;
-    }
     self.file.printTokens();
 }
 
 pub fn nextToken(self: *Tokenizer) Token {
     return switch (self.peek()) {
-        ' ', '\t', '\r', '\x0B', '\x0C' => self.escapeSequenceToken(),
+        ' ', '\t', '\r' => self.escapeSequenceToken(),
         '_', 'a'...'z', 'A'...'Z' => self.identifierToken(),
         '0'...'9' => self.numberLiteralToken(),
         '\n' => self.newLineToken(),
@@ -67,7 +50,7 @@ pub fn nextToken(self: *Tokenizer) Token {
         '}' => self.oneCharToken(.CurlyRight),
         ':' => self.twoCharToken(.Colon, '=', .ColonEquals),
         '=' => self.twoCharToken(.Equals, '=', .DoubleEquals),
-        else => self.unsupportedCharacter(),
+        else => self.unsupportedByte(),
     };
 }
 
@@ -172,14 +155,8 @@ fn identifierToken(self: *Tokenizer) Token {
     return .{ .kind = kind, .start = start, .end = self.file.position };
 }
 
-fn unsupportedCharacter(self: *Tokenizer) Token {
-    self.file.success = false;
-    const len = std.unicode.utf8ByteSequenceLength(self.peek()) catch @panic("len failed");
-    self.file.position += len;
-
-    const column_number = self.file.position - self.file.line_start - len; // TODO: correct len offset
-    const line = File.getLine(self.file.buffer, self.file.line_start, self.file.position, self.file.buffer.len - self.file.position);
-
-    self.printer.printSourceLine("encountered unsupported character\n", .{}, self.file, self.file.line_number, column_number, line, 1);
-    return .{ .kind = .Invalid, .start = self.file.position - len, .end = self.file.position };
+fn unsupportedByte(self: *Tokenizer) Token {
+    const start = self.file.position;
+    self.advance();
+    return .{ .kind = .InvalidByte, .start = start, .end = self.file.position };
 }

@@ -6,7 +6,6 @@ const Node = @import("node.zig");
 const Declaration = @import("declaration.zig");
 const options = @import("options.zig");
 
-// TODO: refactor entire file
 const File = @This();
 allocator: std.mem.Allocator,
 printer: Printer,
@@ -94,13 +93,13 @@ pub fn printTokens(self: *File) void {
     if (!options.debug) {
         return;
     }
-    self.printer.printColorFmt("\n=== TOKENS (<Yellow:{d}>) ===\n", .{self.tokens.items.len});
+    self.printer.printColor("\n=== TOKENS (<Yellow:{d}>) ===\n", .{self.tokens.items.len});
     const max_len = std.fmt.count("{d}", .{self.tokens.items.len});
     for (self.tokens.items, 0..) |token, i| {
-        self.printer.printColorFmt("<Magenta:{d}>: ", .{i});
+        self.printer.printColor("<Magenta:{d}>: ", .{i});
         const current_len = std.fmt.count("{d}", .{i});
         self.printer.pad(max_len - current_len);
-        self.printer.printColorFmt("<Blue:{any}> (start=<Yellow:{d}>) (end=<Yellow:{d}>) (token.string=<Green:\"{s}\">)\n", .{
+        self.printer.printColor("<Blue:{any}> (start=<Yellow:{d}>) (end=<Yellow:{d}>) (token.string=<Green:\"{s}\">)\n", .{
             token.kind,
             token.start,
             token.end,
@@ -115,7 +114,7 @@ pub fn printAst(self: *File) void {
     if (!options.debug) {
         return;
     }
-    self.printer.printColorFmt("\n=== AST (<Yellow:{d}>) ===\n", .{self.ast.items.len});
+    self.printer.printColor("\n=== AST (<Yellow:{d}>) ===\n", .{self.ast.items.len});
     var depth_time: std.ArrayList(u32) = .empty;
     for (self.ast.items) |node| {
         for (depth_time.items, 0..) |remaining, i| {
@@ -126,12 +125,12 @@ pub fn printAst(self: *File) void {
             }
         }
         const kind_color_code: Printer.Ansi.Code = if (depth_time.items.len % 2 == 1) .Blue else .Magenta;
-        self.printer.printColor(kind_color_code, "{any}", .{node.kind});
-        self.printer.printColorFmt(" (children=<Yellow:{d}>) (token_index=", .{node.children});
+        self.printer.printCode(kind_color_code, "{any}", .{node.kind});
+        self.printer.printColor(" (children=<Yellow:{d}>) (token_index=", .{node.children});
         const token_index_color_code: Printer.Ansi.Code = if (node.token_index) |_| .Yellow else .Red;
-        self.printer.printColor(token_index_color_code, "{?d}", .{node.token_index});
+        self.printer.printCode(token_index_color_code, "{?d}", .{node.token_index});
         if (node.token(self)) |token| {
-            self.printer.printColorFmt(") (token.kind=<Cyan:{any}>) (token_string=<Green:\"{s}\">", .{
+            self.printer.printColor(") (token.kind=<Cyan:{any}>) (token_string=<Green:\"{s}\">", .{
                 token.kind,
                 token.string(self),
             });
@@ -156,11 +155,11 @@ pub fn printScopes(self: *File) void {
     if (!options.debug) {
         return;
     }
-    self.printer.printColorFmt("\n=== SCOPES (<Yellow:{d}>) ===\n", .{self.all_scopes.items.len + 1});
-    self.printer.printColorFmt(" Scope <Yellow:global> {s}:\n", .{self.path});
+    self.printer.printColor("\n=== SCOPES (<Yellow:{d}>) ===\n", .{self.all_scopes.items.len + 1});
+    self.printer.printColor(" Scope <Yellow:global> {s}:\n", .{self.path});
     self.printScope(self.global_scope);
     for (self.all_scopes.items, 0..) |scope, i| {
-        self.printer.printColorFmt(" Scope <Yellow:{d}>:\n", .{i});
+        self.printer.printColor(" Scope <Yellow:{d}>:\n", .{i});
         self.printScope(scope);
     }
     self.printer.printString("=== SCOPES END ===\n\n");
@@ -188,14 +187,14 @@ fn printScope(self: *File, scope: *std.StringHashMap(Declaration)) void {
         const name = entry.key_ptr.*;
         const declaration = entry.value_ptr.*;
 
-        self.printer.printColorFmt("  <Blue:{any}>", .{declaration.kind});
+        self.printer.printColor("  <Blue:{any}>", .{declaration.kind});
         const kind_len = std.fmt.count("{any}", .{declaration.kind});
         self.printer.pad(max_kind_len - kind_len);
 
-        self.printer.printColorFmt(" | <Green:{s}>", .{name});
+        self.printer.printColor(" | <Green:{s}>", .{name});
         self.printer.pad(max_name_len - name.len);
 
-        self.printer.printColorFmt(" | <Cyan:{any}>", .{declaration.symbol_type});
+        self.printer.printColor(" | <Cyan:{any}>", .{declaration.symbol_type});
         const symbol_len = std.fmt.count("{any}", .{declaration.symbol_type});
         self.printer.pad(max_symbol_len - symbol_len);
         self.printer.printString(" |\n");

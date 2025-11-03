@@ -80,13 +80,18 @@ pub const Type = enum {
     }
 
     pub fn canCastTo(self: Type, to: Type) bool {
-        // TODO: add check if the number can fit inside the type
-        // TODO: add function and structs
         return switch (self) {
             .ComptimeInt => to.isInt() or to.isFloat(),
             .ComptimeFloat => to.isFloat(),
             else => self == to,
         };
+    }
+
+    pub fn canFit(
+        self: Type,
+    ) bool {
+        // TODO: add check if the number can fit inside the type
+        _ = self;
     }
 
     fn isInt(self: Type) bool {
