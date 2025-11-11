@@ -77,7 +77,17 @@ pub fn flush(self: *const Printer) void {
 }
 
 pub fn print(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
-    self.writer.print(fmt, args) catch @panic("printing failed\n");
+    self.writer.print(fmt, args) catch @panic("Could not print failed\n");
+}
+
+pub fn dprint(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
+    self.print(fmt, args);
+    self.flush();
+}
+
+pub fn dprintanyn(self: *const Printer, any: anytype) void {
+    self.print("{any}\n", .{any});
+    self.flush();
 }
 
 pub fn printString(self: *const Printer, string: []const u8) void {

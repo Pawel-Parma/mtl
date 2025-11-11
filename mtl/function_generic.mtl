@@ -1,6 +1,6 @@
 pub fn main() void {
     const imain = 0;
-    const T = i;
+    const T = i32;
     ff0();
     ff1(T, 1);
     ff2(T, 1, 2);
@@ -34,57 +34,72 @@ pub fn main() void {
     f9(f64);
     f9(f32);
     f9(f16);
+    _ = imain;
+    _ = b;
+    _ = c;
+    _ = d;
+    _ = e;
+    _ = f;
+    _ = g;
     return;
 }
 
-fn ff0() void { const iff0 = 0; }
-fn ff1(T: type, a: T) void { const iff1 = 1; }
-fn ff2(T: type, a: T, b: T) void { const iff2 = 2; }
-fn ff3(T: type, a: T, b: T, c: T) void { const iff3 = 3; }
-fn ff4(T: type, a: T, b: T, c: T, d: T) void { const iff4 = 4; }
-fn ff5(T: type, a: T, b: T, c: T, d: T, e: T) void { const iff5 = 5; }
-fn ff6(T: type, a: T, b: T, c: T, d: T, e: T, f: T) void { const iff6 = 6; }
-fn ff7(T: type, a: T, b: T, c: T, d: T, e: T, f: T, g: T) void { const iff7 = 7; }
-fn ff8(T: type, a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T) void { const iff8 = 8; }
-fn ff9(T: type, a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T) void { const iff9 = 9; }
+fn ff0() void { const iff0 = 0; _ = iff0; }
+fn ff1(T: type, a: T) void { _ = a; const iff1 = 1; _ = iff1; }
+fn ff2(T: type, a: T, b: T) void { _ = a; _ = b; const iff2 = 2; _ = iff2; }
+fn ff3(T: type, a: T, b: T, c: T) void { _ = a; _ = b; _ = c; const iff3 = 3; _ = iff3; }
+fn ff4(T: type, a: T, b: T, c: T, d: T) void { _ = a; _ = b; _ = c; _ = d; const iff4 = 4; _ = iff4; }
+fn ff5(T: type, a: T, b: T, c: T, d: T, e: T) void { _ = a; _ = b; _ = c; _ = d; _ = e; const iff5 = 5; _ = iff5; }
+fn ff6(T: type, a: T, b: T, c: T, d: T, e: T, f: T) void { _ = a; _ = b; _ = c; _ = d; _ = e; _ = f; const iff6 = 6; _ = iff6; }
+fn ff7(T: type, a: T, b: T, c: T, d: T, e: T, f: T, g: T) void { _ = a; _ = b; _ = c; _ = d; _ = e; _ = f; _ = g; const iff7 = 7; _ = iff7; }
+fn ff8(T: type, a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T) void { _ = a; _ = b; _ = c; _ = d; _ = e; _ = f; _ = g; _ = h; const iff8 = 8; _ = iff8; }
+fn ff9(T: type, a: T, b: T, c: T, d: T, e: T, f: T, g: T, h: T, i: T) void { _ = a; _ = b; _ = c; _ = d; _ = e; _ = f; _ = g; _ = h; _ = i; const iff9 = 9; _ = iff9; }
 
 fn f1() void {
     const if1 = 0;
+    _ = if1;
 }
 
 fn f2() void {
     const if2 = 0;
+    _ = if2;
     return;
 }
 
 fn f3(T: type) T {
     const if3 = 0;
+    _ = if3;
     return 1;
 }
 
 fn f4(T: type) T {
     const if4 = 0;
+    _ = if4;
     return f3(T) + 1;
 }
 
 fn f5(T: type, a: T, b: T) T { 
     const if5 = 0; 
+    _ = if5;
     return a + b;
 }
 
 fn f6(T: type, a: T) T {
     const if6 = 0;
+    _ = if6;
     const b = a + 12; 
     return f5(T, a, b) + b;
 }
 
 fn f7(T: type, a: T) T {
     const if7 = 0;
+    _ = if7;
     return f6(T, a + 1);
 }
 
 fn f8(T: type, a: T) T {
     const if8 = 0; 
+    _ = if8;
     const f = f8(T, a + 1);
     return f;
 }
@@ -109,6 +124,13 @@ fn f9(T: type) void {
     const e = f6(T, b / 2);
     const f = f7(T, 0);
     const g = f8(T, 0);
-    f9();
+    f9(T);
+    _ = imain;
+    _ = b;
+    _ = c;
+    _ = d;
+    _ = e;
+    _ = f;
+    _ = g;
     return;
 } 

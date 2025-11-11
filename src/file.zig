@@ -141,7 +141,7 @@ pub fn printAst(self: *File) void {
             depth_time.items[depth_time.items.len - 1] -= 1;
         }
         if (node.children > 0) {
-            depth_time.append(self.allocator, node.children) catch @panic("could not append OOM");
+            depth_time.append(self.allocator, node.children) catch @panic("Could not append OutOfMemory");
         }
         while (depth_time.items.len > 0 and depth_time.getLast() == 0) {
             _ = depth_time.pop().?;

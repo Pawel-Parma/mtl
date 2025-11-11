@@ -1,0 +1,73 @@
+pub fn main() void {
+    const a: type = void;
+    const b = void;
+    const c = void;
+    var n1 := 1;
+    n1 = 1;
+    var n2 := 1.2;
+    n2 = 1.2;
+    var n3 := n1;
+    n3 = n1;
+    const n4 = 1 + 2 - 3 * 4 / 5 - (1 - 2) - add(1 - 2, 2) - - 2;
+    const n5 = 1 - n4;
+    const n6 = 1 % 2;
+    const n7: bool = 1 == 1; 
+    const n8: bool = 1 != 2; 
+    const n9: bool = 1 > 0; 
+    const n10: bool = 1 >= 0; 
+    const n11: bool = 1 < 2; 
+    const n12: bool = 1 <= 1; 
+    const n13: bool = 1 <= 1; 
+
+    const n14: bool = true and true; 
+    const n15: bool = not false; 
+    const n16: bool = true or false; 
+    const n17: bool = true ^ false; 
+    const n18 = 18 ^ 12; 
+
+    var o: u32 = 12;
+    o = 8;
+    o += 4;
+    o -= 5;
+    o *= 6;
+    o /= 7;
+    o %= 8;
+    o ^= 8;
+
+    call();
+    _ = add(1, 2);
+
+    const one = 1;
+    const two = 2;
+    _ = add(one, two);
+
+    _ = a;
+    _ = b;
+    _ = c;
+    _ = n1;
+    _ = n2;
+    _ = n3;
+    _ = n4;
+    _ = n5;
+    _ = n6;
+    _ = n7;
+    _ = n8;
+    _ = n9;
+    _ = n10;
+    _ = n11;
+    _ = n12;
+    _ = n13;
+    _ = n14;
+    _ = n15;
+    _ = n16;
+    _ = n17;
+    _ = n18;
+    return 0;
+}
+
+fn add(a: u32, b: u32) u32 {
+    return a + b;
+}
+
+fn call() void {}
+

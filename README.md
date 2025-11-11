@@ -30,7 +30,7 @@ When debug mode is enabled Tokens, AST and Scopes will be printed when available
 1. Minimal empty program:  
 
 Each entrypoint file requires a public main function.  
-```mtl
+```zig
 pub fn main() void {
 
 }
@@ -38,7 +38,7 @@ pub fn main() void {
 
 2. Variable declaration:
 
-```mtl
+```zig
 pub fn main() void {
     const a: u32 = 12;
     const b: f32 = 12.3;
@@ -52,7 +52,7 @@ pub fn main() void {
 
 3. Function declaration:
 
-```mtl
+```zig
 pub fn main() void {
     const a = add(1, 2);
     return;

@@ -44,6 +44,7 @@ fn parseNode(self: *Parser) Error!void {
         .CurlyLeft => try self.parseBlock(),
         .Return => try self.parseReturn(),
         .Identifier => try self.parseExpressionStatement(),
+        .Underscore => try self.parseUnderscore(),
         else => self.reportError("Unexpected token {any}\n", .{token}),
     };
 }
@@ -61,14 +62,30 @@ inline fn peek(self: *Parser) Token {
     return self.file.tokens.items[self.file.current];
 }
 
-inline fn isAtEnd(self: *Parser) bool {
-    return self.file.current >= self.file.tokens.items.len;
+inline fn peekNext(self: *Parser) Token {
+    return self.file.tokens.items[self.file.current + 1];
 }
 
-fn checkEof(self: *Parser) !void {
-    if (self.isAtEnd()) {
+inline fn isIndexAtEnd(self: *Parser, index: u32) bool {
+    return index >= self.file.tokens.items.len;
+}
+
+inline fn isAtEnd(self: *Parser) bool {
+    return self.isIndexAtEnd(self.file.current);
+}
+
+fn checkEofAtIndex(self: *Parser, index: u32) !void {
+    if (self.isIndexAtEnd(index)) {
         return self.reportError("Unexpected end of file\n", .{});
     }
+}
+
+inline fn checkEof(self: *Parser) !void {
+    try self.checkEofAtIndex(self.file.current);
+}
+
+inline fn checkEofNext(self: *Parser) !void {
+    try self.checkEofAtIndex(self.file.current + 1);
 }
 
 fn match(self: *Parser, comptime kinds: anytype) !Token {
@@ -88,8 +105,8 @@ fn expectOneOf(self: *Parser, comptime kinds: anytype) !Token {
     return token;
 }
 
-inline fn expect(self: *Parser, comptime kind: Token.Kind) !Token {
-    return self.expectOneOf(.{kind});
+inline fn expect(self: *Parser, comptime kind: Token.Kind) !void {
+    _ = try self.expectOneOf(.{kind});
 }
 
 fn synchronize(self: *Parser) void {
@@ -139,7 +156,7 @@ fn parseDeclaration(self: *Parser) !void {
     try self.pushNode(.{ .kind = .Declaration, .children = 3, .token_index = declaration_index });
 
     const name_identifier_index = self.file.current;
-    _ = try self.expect(.Identifier);
+    try self.expect(.Identifier);
     try self.pushNode(makeLeaf(.Identifier, name_identifier_index));
 
     const token = switch (declaration.kind) {
@@ -150,30 +167,30 @@ fn parseDeclaration(self: *Parser) !void {
     var type_identifier_index: ?u32 = null;
     if (token.kind == .Colon) {
         type_identifier_index = self.file.current;
-        _ = try self.expect(.Identifier);
-        _ = try self.expect(.Equals);
+        try self.expect(.Identifier);
+        try self.expect(.Equals);
     }
     try self.pushNode(makeLeaf(.TypeIdentifier, type_identifier_index));
 
     try self.parseExpression();
-    _ = try self.expect(.SemiColon);
+    try self.expect(.SemiColon);
 }
 
 fn parseFunction(self: *Parser) !void {
     const fn_index = self.file.current;
-    _ = try self.expect(.Fn);
+    try self.expect(.Fn);
     try self.pushNode(.{ .kind = .Function, .children = 4, .token_index = fn_index });
 
     const identifier_index = self.file.current;
-    _ = try self.expect(.Identifier);
+    try self.expect(.Identifier);
     try self.pushNode(makeLeaf(.Identifier, identifier_index));
 
-    _ = try self.expect(.ParenLeft);
+    try self.expect(.ParenLeft);
     try self.parseParameters();
-    _ = try self.expect(.ParenRight);
+    try self.expect(.ParenRight);
 
     const type_index = self.file.current;
-    _ = try self.expect(.Identifier);
+    try self.expect(.Identifier);
     try self.pushNode(makeLeaf(.Identifier, type_index));
 
     try self.parseBlock();
@@ -188,12 +205,12 @@ fn parseParameters(self: *Parser) !void {
         try self.pushNode(.{ .kind = .Parameter, .children = 2 });
 
         const parameter_identifier_index = self.file.current;
-        _ = try self.expect(.Identifier);
+        try self.expect(.Identifier);
         try self.pushNode(makeLeaf(.Identifier, parameter_identifier_index));
-        _ = try self.expect(.Colon);
+        try self.expect(.Colon);
 
         const type_index = self.file.current;
-        _ = try self.expect(.Identifier);
+        try self.expect(.Identifier);
         try self.pushNode(makeLeaf(.Identifier, type_index));
         if (self.peek().kind == .Comma) {
             self.advance();
@@ -214,7 +231,7 @@ fn parsePub(self: *Parser) !void {
 }
 
 fn parseBlock(self: *Parser) Error!void {
-    _ = try self.expect(.CurlyLeft);
+    try self.expect(.CurlyLeft);
     try self.pushNode(.{ .kind = .Scope, .children = 0 });
     const scope_index = self.lastPushedIndex();
 
@@ -226,28 +243,56 @@ fn parseBlock(self: *Parser) Error!void {
         };
         children += 1;
     }
-    _ = try self.expect(.CurlyRight);
+    try self.expect(.CurlyRight);
 
     self.file.ast.items[scope_index].children = children;
 }
 
 fn parseReturn(self: *Parser) !void {
     const return_index = self.file.current;
-    _ = try self.expect(.Return);
+    try self.expect(.Return);
     try self.pushNode(.{ .kind = .Return, .children = 0, .token_index = return_index });
 
     if (!self.isAtEnd() and self.peek().kind != .SemiColon) {
         self.file.ast.items[self.lastPushedIndex()].children = 1;
         try self.parseExpression();
     }
-    _ = try self.expect(.SemiColon);
+    try self.expect(.SemiColon);
 }
 
 fn parseExpressionStatement(self: *Parser) !void {
     try self.pushNode(.{ .kind = .ExpressionStatement, .children = 1 });
-    const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-    try self.file.ast.appendSlice(self.allocator, expression);
-    _ = try self.expect(.SemiColon);
+    try self.checkEofNext();
+    const token_next = self.peekNext();
+    switch (token_next.kind) {
+        .ParenLeft => {
+            const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+            try self.file.ast.appendSlice(self.allocator, expression);
+        },
+        .Equals, .PlusEquals, .MinusEquals, .StarEquals, .SlashEquals, .PercentEquals, .CaretEquals => {
+            try self.pushNode(.{ .kind = .Mutation, .children = 3 });
+            try self.pushNode(.{ .kind = .Identifier, .children = 0, .token_index = self.file.current });
+            self.advance();
+            const kind: Node.Kind = switch (token_next.kind) {
+                .Equals => .Equals,
+                .PlusEquals => .PlusEquals,
+                .MinusEquals => .MinusEquals,
+                .StarEquals => .StarEquals,
+                .SlashEquals => .SlashEquals,
+                .PercentEquals => .PercentEquals,
+                .CaretEquals => .CaretEquals,
+                else => unreachable,
+            };
+            try self.pushNode(.{ .kind = kind, .children = 0 });
+            self.advance();
+            try self.parseExpression();
+        },
+        else => {
+            self.advance();
+            return self.reportError("Unexpected token {any} in parseExpressionStatement\n", .{token_next.kind});
+        },
+    }
+    try self.expect(.SemiColon);
 }
 
 inline fn parseExpression(self: *Parser) !void {
@@ -273,18 +318,36 @@ fn parsePrefix(self: *Parser) Error![]Node {
     const token = self.peek();
     const token_index = self.advanceGetIndex();
     switch (token.kind) {
-        .Identifier => return self.nodesToHeapSlice(.{makeLeaf(.Identifier, token_index)}),
-        .IntLiteral => return self.nodesToHeapSlice(.{makeLeaf(.IntLiteral, token_index)}),
-        .FloatLiteral => return self.nodesToHeapSlice(.{makeLeaf(.FloatLiteral, token_index)}),
-        .Minus => {
-            const minus = Node{ .kind = .UnaryMinus, .children = 1, .token_index = token_index };
+        .Identifier, .IntLiteral, .IntBinaryLiteral, .IntOctalLiteral, .IntHexadecimalLiteral, .IntScientificLiteral, .FloatLiteral, .FloatScientificLiteral, .TrueLiteral, .FalseLiteral => {
+            const kind: Node.Kind = switch (token.kind) {
+                .Identifier => .Identifier,
+                .IntLiteral => .IntLiteral,
+                .IntBinaryLiteral => .IntBinaryLiteral,
+                .IntOctalLiteral => .IntOctalLiteral,
+                .IntHexadecimalLiteral => .IntHexadecimalLiteral,
+                .IntScientificLiteral => .IntScientificLiteral,
+                .FloatLiteral => .FloatLiteral,
+                .FloatScientificLiteral => .FloatScientificLiteral,
+                .TrueLiteral => .TrueLiteral,
+                .FalseLiteral => .FalseLiteral,
+                else => unreachable,
+            };
+            return self.nodesToHeapSlice(.{makeLeaf(kind, token_index)});
+        },
+        .Minus, .Not => {
+            const kind: Node.Kind = switch (token.kind) {
+                .Minus => .UnaryMinus,
+                .Not => .UnaryNot,
+                else => unreachable,
+            };
+            const node = Node{ .kind = kind, .children = 1, .token_index = token_index };
             const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Prefix);
-            return self.nodesToHeapSlice(.{ minus, expression });
+            return self.nodesToHeapSlice(.{ node, expression });
         },
         .ParenLeft => {
             const grouping = Node{ .kind = .Grouping, .children = 1, .token_index = token_index };
             const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-            _ = try self.expect(.ParenRight);
+            try self.expect(.ParenRight);
             return self.nodesToHeapSlice(.{ grouping, expression });
         },
         else => {
@@ -298,12 +361,22 @@ fn parseInfixOrSuffix(self: *Parser, left: []Node) ![]Node {
     const token = self.peek();
     const token_index = self.advanceGetIndex();
     switch (token.kind) {
-        .Plus, .Minus, .Star, .Slash => {
+        .Plus, .Minus, .Star, .Slash, .Percent, .DoubleEquals, .BangEquals, .GraterThan, .GraterEqualsThan, .LesserThan, .LesserEqualsThan, .And, .Or, .Caret => {
             const kind: Node.Kind = switch (token.kind) {
                 .Plus => .BinaryPlus,
                 .Minus => .BinaryMinus,
                 .Star => .BinaryStar,
                 .Slash => .BinarySlash,
+                .Percent => .BinaryPercent,
+                .DoubleEquals => .BinaryDoubleEquals,
+                .BangEquals => .BinaryBangEquals,
+                .GraterThan => .BinaryGraterThan,
+                .GraterEqualsThan => .BinaryGraterEqualsThan,
+                .LesserThan => .BinaryLesserThan,
+                .LesserEqualsThan => .BinaryLesserEqualsThan,
+                .And => .BinaryAnd,
+                .Or => .BinaryOr,
+                .Caret => .BinaryCaret,
                 else => unreachable,
             };
             const operator = Node{ .kind = kind, .children = 2, .token_index = token_index };
@@ -313,7 +386,7 @@ fn parseInfixOrSuffix(self: *Parser, left: []Node) ![]Node {
         .ParenLeft => {
             const call = Node{ .kind = .Call, .children = 2, .token_index = token_index };
             const arguments = try self.parseArguments();
-            _ = try self.expect(.ParenRight);
+            try self.expect(.ParenRight);
             return self.nodesToHeapSlice(.{ call, left, arguments });
         },
         else => {
@@ -338,4 +411,12 @@ fn parseArguments(self: *Parser) ![]Node {
     }
     arguments.items[0].children = children;
     return arguments.items;
+}
+
+fn parseUnderscore(self: *Parser) !void {
+    try self.expect(.Underscore);
+    try self.pushNode(.{ .kind = .IgnoreResult, .children = 1 });
+    try self.expect(.Equals);
+    try self.parseExpression();
+    try self.expect(.SemiColon);
 }

@@ -5,9 +5,15 @@ const Token = @import("token.zig");
 const Node = @import("node.zig");
 
 const Declaration = @This();
+node_index: ?u32,
 kind: Kind,
 symbol_type: Type,
-node_index: ?u32,
+muated: bool = false,
+used: bool = false,
+
+pub const Error = error{
+    IncompatibleTypes,
+};
 
 pub const Kind = enum {
     PubConst,
@@ -67,10 +73,14 @@ pub const Type = enum {
 
     pub fn allowsOperation(self: Type, operation: Node.Kind) bool {
         return switch (operation) {
-            .UnaryMinus, .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash => switch (self) {
-                .I8, .I16, .I32, .I64, .I128, .U8, .U16, .U32, .U64, .U128, .F16, .F32, .F64, .F80, .F128, .ComptimeInt, .ComptimeFloat => true,
-                else => false,
-            },
+            .UnaryMinus, .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash => self.isInt() or self.isFloat(),
+            .PlusEquals, .MinusEquals, .StarEquals, .SlashEquals => self.isInt() or self.isFloat(),
+            .BinaryPercent, .PercentEquals => self.isInt(),
+            .BinaryDoubleEquals, .BinaryBangEquals => self.isInt() or self.isFloat() or self.isBool() or self.isType(),
+            .BinaryGraterThan, .BinaryGraterEqualsThan, .BinaryLesserThan, .BinaryLesserEqualsThan => self.isInt() or self.isFloat(),
+            .BinaryAnd, .BinaryOr, .UnaryNot => self.isBool(),
+            .BinaryCaret, .CaretEquals => self.isInt() or self.isBool(),
+            .Equals => true,
             else => false,
         };
     }
@@ -94,22 +104,56 @@ pub const Type = enum {
         _ = self;
     }
 
-    fn isInt(self: Type) bool {
+    pub fn subsetType(left: Type, right: Type) Error!Type {
+        if (left == right) {
+            return left;
+        }
+
+        if (right == .ComptimeInt and (left.isInt() or left.isFloat())) {
+            return left;
+        }
+        if (left == .ComptimeInt and (right.isInt() or right.isFloat())) {
+            return right;
+        }
+
+        if (right == .ComptimeFloat and left.isFloat()) {
+            return left;
+        }
+        if (left == .ComptimeFloat and right.isFloat()) {
+            return right;
+        }
+
+        return Error.IncompatibleTypes;
+    }
+
+    inline fn isInt(self: Type) bool {
         return switch (self) {
             .ComptimeInt, .I8, .I16, .I32, .I64, .I128, .U8, .U16, .U32, .U64, .U128 => true,
             else => false,
         };
     }
 
-    fn isFloat(self: Type) bool {
+    inline fn isFloat(self: Type) bool {
         return switch (self) {
             .ComptimeFloat, .F16, .F32, .F64, .F80, .F128 => true,
             else => false,
         };
+    }
+
+    inline fn isBool(self: Type) bool {
+        return self == .Bool;
+    }
+
+    inline fn isType(self: Type) bool {
+        return self == .Type;
     }
 };
 
 pub inline fn node(self: *const Declaration, file: *File) ?Node {
     const node_index = self.node_index orelse return null;
     return file.ast.items[node_index];
+}
+
+pub inline fn string(self: *const Declaration, file: *File) []const u8 {
+    return self.node(file).?.string(file);
 }

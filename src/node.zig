@@ -4,25 +4,59 @@ const File = @import("file.zig");
 const Token = @import("token.zig");
 
 const Node = @This();
-kind: Kind,
-children: u32,
 token_index: ?u32 = null,
+children: u32,
+kind: Kind,
 
 pub const Kind = enum {
+    Expression,
+
     UnaryMinus,
 
     BinaryPlus,
     BinaryMinus,
     BinaryStar,
     BinarySlash,
+    BinaryPercent,
+
+    BinaryDoubleEquals,
+    BinaryBangEquals,
+    BinaryGraterThan,
+    BinaryGraterEqualsThan,
+    BinaryLesserThan,
+    BinaryLesserEqualsThan,
+
+    UnaryNot,
+    BinaryAnd,
+    BinaryOr,
+    BinaryCaret,
 
     Grouping,
     Call,
+    IgnoreResult,
 
     IntLiteral,
+    IntBinaryLiteral,
+    IntOctalLiteral,
+    IntHexadecimalLiteral,
+    IntScientificLiteral,
     FloatLiteral,
+    FloatScientificLiteral,
     Identifier,
+    TrueLiteral,
+    FalseLiteral,
     TypeIdentifier,
+
+    ExpressionStatement,
+    Mutation,
+
+    Equals,
+    PlusEquals,
+    MinusEquals,
+    StarEquals,
+    SlashEquals,
+    PercentEquals,
+    CaretEquals,
 
     Public,
     Declaration,
@@ -32,9 +66,6 @@ pub const Kind = enum {
     Argument,
     Arguments,
     Return,
-
-    Expression,
-    ExpressionStatement,
 
     Scope,
 };

@@ -17,60 +17,75 @@ pub fn main() void {
     const d = f5(b + 1, c * 2); 
     const e = f6(b / 2);
     const f = f7(0);
-    const g = f8(0);
-    f9();
+    // const g = f8(0);
+    // f9();
+    _ = imain;
+    _ = b;
+    _ = c;
+    _ = d;
+    _ = e;
+    _ = f;
+    // _ = g;
     return;
 }
 
-fn ff0() void { const iff0 = 0; }
-fn ff1(a: u32) void { const iff1 = 1; }
-fn ff2(a: u32, b: u32) void { const iff2 = 2; }
-fn ff3(a: u32, b: u32, c: u32) void { const iff3 = 3; }
-fn ff4(a: u32, b: u32, c: u32, d: u32) void { const iff4 = 4; }
-fn ff5(a: u32, b: u32, c: u32, d: u32, e: u32) void { const iff5 = 5; }
-fn ff6(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) void { const iff6 = 6; }
-fn ff7(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32) void { const iff7 = 7; }
-fn ff8(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, h: u32) void { const iff8 = 8; }
-fn ff9(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, h: u32, i: u32) void { const iff9 = 9; }
+fn ff0() void { const iff0 = 0; _ = iff0; }
+fn ff1(a: u32) void { _ = a; const iff1 = 1; _ = iff1; }
+fn ff2(a: u32, b: u32) void { _ = a; _ = b; const iff2 = 2; _ = iff2; }
+fn ff3(a: u32, b: u32, c: u32) void { _ = a; _ = b; _ = c; const iff3 = 3; _ = iff3; }
+fn ff4(a: u32, b: u32, c: u32, d: u32) void { _ = a; _ = b; _ = c; _ = d; const iff4 = 4; _ = iff4; }
+fn ff5(a: u32, b: u32, c: u32, d: u32, e: u32) void { _ = a; _ = b; _ = c; _ = d; _ = e; const iff5 = 5; _ = iff5; }
+fn ff6(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) void { _ = a; _ = b; _ = c; _ = d; _ = e; _ = f; const iff6 = 6; _ = iff6; }
+fn ff7(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32) void { _ = a; _ = b; _ = c; _ = d; _ = e; _ = f; _ = g; const iff7 = 7; _ = iff7; }
+fn ff8(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, h: u32) void { _ = a; _ = b; _ = c; _ = d; _ = e; _ = f; _ = g; _ = h; const iff8 = 8; _ = iff8; }
+fn ff9(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, h: u32, i: u32) void { _ = a; _ = b; _ = c; _ = d; _ = e; _ = f; _ = g; _ = h; _ = i; const iff9 = 9; _ = iff9; }
 
 fn f1() void {
     const if1 = 0;
+    _ = if1;
 }
 
 fn f2() void {
     const if2 = 0;
+    _ = if2;
     return;
 }
 
 fn f3() u32 {
     const if3 = 0;
+    _ = if3;
     return 1;
 }
 
 fn f4() u32 {
     const if4 = 0;
+    _ = if4;
     return f3() + 1;
 }
 
 fn f5(a: u32, b: u32) u32 { 
     const if5 = 0; 
+    _ = if5;
     return a + b;
 }
 
 fn f6(a: u32) u32 {
     const if6 = 0;
-    const b0 = a + 12; // when const b, shadows declaration
+    _ = if6;
+    const b0 = a + 12;
     return f5(a, b0) + b0;
 }
 
 fn f7(a: u32) u32 {
     const if7 = 0;
+    _ = if7;
     return f6(a + 1);
 }
 
 fn f8(a: u32) u32 {
-    const if8 = 0; // recursion is not supported
-    const f0 = f8(a + 1); // when const f, shadows declaration
+    const if8 = 0; 
+    _ = if8;
+    const f0 = f8(a + 1);
     return f0;
 }
 
@@ -95,5 +110,12 @@ fn f9() void {
     const f = f7(0);
     const g = f8(0);
     f9();
+    _ = imain;
+    _ = b;
+    _ = c;
+    _ = d;
+    _ = e;
+    _ = f;
+    _ = g;
     return;
 } 

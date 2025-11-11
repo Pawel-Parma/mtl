@@ -1,0 +1,34 @@
+const n1 = 1;
+const n2 = 1000;
+const n3 = 1_000_000;
+
+const f1 = 1.2;
+const f2 = 1000.2000;
+const f3 = 1_000_000.2_000_000;
+
+const b1 = 0b1;
+const b2 = 0b10101001;
+const b3 = 0b10_10_10_01;
+
+const o1 = 0o0;
+const o2 = 0o755;
+const o3 = 0o7_5_5;
+
+const x1 = 0x0;
+const x2 = 0xFF;
+const x3 = 0xAB_CD_EF;
+
+const e1  = 1e9;
+const e2  = 123e456;
+const e3  = 0e0;
+const e4  = 1e-9;
+const e5  = 123e-456;
+const e6  = 1.0e3;
+const e7  = 0.5e-2;
+const e8  = 12.34e5;
+const e9  = 1_000e3;
+const e10 = 12_34.56e7;
+
+pub fn main() void {
+
+}

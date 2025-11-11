@@ -40,8 +40,8 @@ pub fn main() u8 {
     };
 
     var tokenizer = Tokenizer.init(arena_allocator, printer, &file);
-    tokenizer.tokenize() catch |err| {
-        printer.printError("Tokenization failed: {any}\n", .{err});
+    tokenizer.tokenize() catch {
+        printer.printError("Tokenization failed\n", .{});
         return Code.TokenizationFailed;
     };
 
@@ -52,8 +52,8 @@ pub fn main() u8 {
     };
 
     var semantic = Semantic.init(arena_allocator, printer, &file);
-    semantic.analyze() catch |err| {
-        printer.printError("Semantic analysis failed: {any}\n", .{err});
+    semantic.analyze() catch {
+        printer.printError("Semantic analysis failed\n", .{});
         return Code.SemanticAnalysisFailed;
     };
 

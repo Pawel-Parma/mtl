@@ -3,49 +3,81 @@ const std = @import("std");
 const File = @import("file.zig");
 
 const Token = @This();
-kind: Kind,
 start: u32,
 end: u32,
+kind: Kind,
 
 pub const Kind = enum {
     InvalidByte,
+    EscapeSequence,
     Eof,
+    Newline,
+    Comment,
 
-    Plus,
-    Minus,
-    Star,
-    Slash,
+    Pub,
+    Var,
+    Const,
 
+    Colon,
     Equals,
     ColonEquals,
+
+    IntLiteral,
+    IntBinaryLiteral,
+    IntOctalLiteral,
+    IntHexadecimalLiteral,
+    IntScientificLiteral,
+    FloatLiteral,
+    FloatScientificLiteral,
+    Identifier,
+
+    Plus,
+    PlusEquals,
+    Minus,
+    MinusEquals,
+    Star,
+    StarEquals,
+    Slash,
+    SlashEquals,
+    Percent,
+    PercentEquals,
+
     DoubleEquals,
-    Comma,
-    Colon,
-    SemiColon,
+    BangEquals,
+    GraterThan,
+    GraterEqualsThan,
+    LesserThan,
+    LesserEqualsThan,
+
+    And,
+    Not,
+    Or,
+    TrueLiteral,
+    FalseLiteral,
+    Caret,
+    CaretEquals,
 
     ParenLeft,
     ParenRight,
     CurlyLeft,
     CurlyRight,
 
-    IntLiteral,
-    FloatLiteral,
-    Identifier,
+    Bang,
 
-    Pub,
-    Var,
-    Const,
     Fn,
     Return,
 
-    Newline,
-    Comment,
-    EscapeSequence,
+    Comma,
+    SemiColon,
+    Underscore,
 };
 
 pub const Precedence = enum {
     Lowest,
-    Assignment,
+    Xor,
+    Or,
+    And,
+    Equality,
     Sum,
     Product,
     Prefix,
@@ -58,9 +90,13 @@ pub const Precedence = enum {
 
 pub inline fn precedence(self: *const Token) Precedence {
     return switch (self.kind) {
-        .Equals, .ColonEquals => .Assignment,
+        .Or => .Or,
+        .Caret => .Xor,
+        .And => .And,
+        .DoubleEquals, .BangEquals, .GraterThan, .GraterEqualsThan, .LesserThan, .LesserEqualsThan => .Equality,
         .Plus, .Minus => .Sum,
-        .Star, .Slash => .Product,
+        .Star, .Slash, .Percent => .Product,
+        .Not => .Prefix,
         .ParenLeft => .Suffix,
         else => .Lowest,
     };
@@ -73,9 +109,10 @@ pub const Associativity = enum {
 
 pub inline fn associativity(self: *const Token) Associativity {
     return switch (self.kind) {
-        .Plus, .Minus, .Star, .Slash => .Left,
-        .Equals => .Right,
-        .DoubleEquals, .Comma, .Colon => .Left,
+        .Plus, .Minus, .Star, .Slash, .Percent => .Left,
+        .DoubleEquals, .BangEquals, .GraterThan, .GraterEqualsThan, .LesserThan, .LesserEqualsThan => .Left,
+        .And, .Or, .Caret => .Left,
+        .Not => .Right,
         .ParenLeft => .Left,
         else => .Left,
     };
@@ -85,9 +122,52 @@ pub const keywords: std.StaticStringMap(Kind) = .initComptime([_]struct { []cons
     .{ "pub", .Pub },
     .{ "const", .Const },
     .{ "var", .Var },
+    .{ "true", .TrueLiteral },
+    .{ "false", .FalseLiteral },
+    .{ "and", .And },
+    .{ "or", .Or },
+    .{ "not", .Not },
     .{ "fn", .Fn },
     .{ "return", .Return },
 });
+
+pub fn getCorrespondingKind(char: u8) Token.Kind {
+    return switch (char) {
+        ';' => .SemiColon,
+        ',' => .Comma,
+        '(' => .ParenLeft,
+        ')' => .ParenRight,
+        '{' => .CurlyLeft,
+        '}' => .CurlyRight,
+        '-' => .Minus,
+        '+' => .Plus,
+        '*' => .Star,
+        '%' => .Percent,
+        ':' => .Colon,
+        '=' => .Equals,
+        '>' => .GraterThan,
+        '<' => .LesserThan,
+        '^' => .Caret,
+        '!' => .Bang,
+        else => unreachable,
+    };
+}
+
+pub fn getCorrespondingKindEquals(char: u8) Token.Kind {
+    return switch (char) {
+        '+' => .PlusEquals,
+        '-' => .MinusEquals,
+        '*' => .StarEquals,
+        '%' => .PercentEquals,
+        ':' => .ColonEquals,
+        '=' => .DoubleEquals,
+        '>' => .GraterEqualsThan,
+        '<' => .LesserEqualsThan,
+        '^' => .CaretEquals,
+        '!' => .BangEquals,
+        else => unreachable,
+    };
+}
 
 pub inline fn len(self: *const Token) usize {
     return self.end - self.start;

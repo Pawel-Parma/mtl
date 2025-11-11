@@ -1,18 +1,8 @@
-refactor code so there is not need to change contex around the function and the index is passed as an argument
-check returs function stuff 
+check returs type function stuff 
 support recvursion
-make diff scopes
-add _ = f()
+make diff scopes to allow redeclare
 
-
-add more checks for allow operation etc. check if any primitive can do operation
 add function and function_generic to all when completed
-
-add assigment
-add (+ - * /)=
-check if var mutated and var, const used
-
-add bools
 
 add tests
 
