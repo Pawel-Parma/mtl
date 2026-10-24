@@ -70,6 +70,8 @@ pub const Kind = enum {
     Comma,
     SemiColon,
     Underscore,
+
+    At,
 };
 
 pub const Precedence = enum {
@@ -149,6 +151,7 @@ pub fn getCorrespondingKind(char: u8) Token.Kind {
         '<' => .LesserThan,
         '^' => .Caret,
         '!' => .Bang,
+        '@' => .At,
         else => unreachable,
     };
 }

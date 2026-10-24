@@ -6,10 +6,11 @@
     .maximum_zig_version = "0.16.0-dev.368+2a97e0af6",
     .dependencies = .{},
     .paths = .{
-        "build.zig",
-        "build.zig.zon",
-        "src",
         "LICENSE",
         "README.md",
+        "build.zig",
+        "build.zig.zon",
+        "mtl",
+        "src",
     },
 }

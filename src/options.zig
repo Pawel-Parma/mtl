@@ -1,1 +1,6 @@
-pub var debug: bool = false;
+const Options = @This();
+debug: bool,
+
+pub const default: Options = .{
+    .debug = false,
+};

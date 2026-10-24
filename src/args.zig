@@ -1,55 +1,55 @@
 const std = @import("std");
-const exit = std.process.exit;
 
 const Printer = @import("printer.zig");
-const options = @import("options.zig");
+const Options = @import("options.zig");
 
 const Args = @This();
 allocator: std.mem.Allocator,
 printer: Printer,
+options: *Options,
 args: [][:0]u8,
 args_map: std.StringHashMap(?[]const u8),
 
-pub fn init(allocator: std.mem.Allocator, printer: Printer) !Args {
+pub fn init(allocator: std.mem.Allocator, printer: Printer, options: *Options) !Args {
     const args = try std.process.argsAlloc(allocator);
-    const argsMap = try createArgsMap(allocator, args);
     return .{
         .allocator = allocator,
         .printer = printer,
+        .options = options,
         .args = args,
-        .args_map = argsMap,
+        .args_map = try createArgsMap(allocator, args),
     };
 }
 
-pub fn deinit(self: *const Args) void {
+pub fn deinit(self: *Args) void {
     std.process.argsFree(self.allocator, self.args);
+    self.args_map.deinit();
 }
 
-pub fn conatins(self: *const Args, comptime string: []const u8) bool {
+fn contains(self: *const Args, comptime string: []const u8) bool {
     return self.args_map.contains(string);
 }
 
 pub fn process(self: *const Args) bool {
-    if (self.args.len == 1 or self.conatins("--help") or self.conatins("-h")) {
+    if (self.args.len == 1 or self.contains("--help") or self.contains("-h")) {
         self.printUsage();
         return true;
     }
-    if (self.conatins("--version") or self.conatins("-v")) {
+    if (self.contains("--version") or self.contains("-v")) {
         self.printVersion();
         return true;
     }
-    if (self.conatins("--debug") or self.conatins("-d")) {
-        options.debug = true;
+    if (self.contains("--debug") or self.contains("-d")) {
+        self.options.debug = true;
     }
     return false;
 }
 
 pub fn getMainFilePath(self: *const Args) ?[]const u8 {
     for (self.args[1..]) |arg| {
-        if (arg.len == 0 or arg[0] == '-') {
-            continue;
+        if (arg.len != 0 and arg[0] != '-') {
+            return arg[0..];
         }
-        return arg[0..];
     }
     return null;
 }
@@ -58,27 +58,25 @@ pub fn printUsage(self: *const Args) void {
     self.printer.print(
         \\Usage: mtl [options] <file_path>
         \\Options:
-        \\  --help, -h          Print help message
-        \\  --version, -v       Print version 
-        \\  --debug, -d         Enable debug mode
+        \\  -h, --help          Show help message
+        \\  -v, --version       Print version
+        \\  -d, --debug         Enable debug mode
         \\
     , .{});
 }
 
-pub fn printVersion(self: *const Args) void {
+fn printVersion(self: *const Args) void {
     self.printer.print("0.0.0\n", .{});
 }
 
 fn createArgsMap(allocator: std.mem.Allocator, args: [][:0]u8) !std.StringHashMap(?[]const u8) {
-    var args_map: std.StringHashMap(?[]const u8) = .init(allocator);
+    var map = std.StringHashMap(?[]const u8).init(allocator);
     for (args[1..]) |arg| {
-        if (std.mem.indexOfScalar(u8, arg, '=')) |eq_index| {
-            const key = arg[0..eq_index];
-            const value = arg[(eq_index + 1)..];
-            try args_map.put(key, value);
+        if (std.mem.indexOfScalar(u8, arg, '=')) |i| {
+            try map.put(arg[0..i], arg[(i + 1)..]);
         } else {
-            try args_map.put(arg, null);
+            try map.put(arg, null);
         }
     }
-    return args_map;
+    return map;
 }

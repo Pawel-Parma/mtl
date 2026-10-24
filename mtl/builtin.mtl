@@ -1,0 +1,17 @@
+pub fn main() void {
+    const a: u32 = 1;
+    @print(a);
+    const b = @typeof(a);
+    const c: b = 12;
+    // const d = u32;
+    // const e = @typeof(d) ;
+    // const f: e = d; 
+    // const g: @typeof(a) = 12;
+    // const g: @typeof(a) = a;
+    _ = b;
+    _ = c;
+    // _ = f;
+    // _ = e;
+    // _ = g;
+}
+

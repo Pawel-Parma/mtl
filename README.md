@@ -36,7 +36,7 @@ pub fn main() void {
 }
 ```
 
-2. Variable declaration:
+2. Variable declaration and mutation:
 
 ```zig
 pub fn main() void {
@@ -47,6 +47,9 @@ pub fn main() void {
     const d = 14;
     var e: int = 15 + c;
     var f := 16 + e * d;
+    
+    e = 1;
+    f += 12;
 }
 ```
 
@@ -54,7 +57,7 @@ pub fn main() void {
 
 ```zig
 pub fn main() void {
-    const a = add(1, 2);
+    _ = add(1, 2);
     return;
 }
 

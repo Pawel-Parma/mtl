@@ -90,6 +90,11 @@ pub fn dprintanyn(self: *const Printer, any: anytype) void {
     self.flush();
 }
 
+pub fn dprintsn(self: *const Printer, any: []const u8) void {
+    self.print("{s}\n", .{any});
+    self.flush();
+}
+
 pub fn printString(self: *const Printer, string: []const u8) void {
     self.print("{s}", .{string});
 }

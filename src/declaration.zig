@@ -8,7 +8,8 @@ const Declaration = @This();
 node_index: ?u32,
 kind: Kind,
 symbol_type: Type,
-muated: bool = false,
+declared_type: ?Type,
+mutated: bool = false,
 used: bool = false,
 
 pub const Error = error{
@@ -72,8 +73,10 @@ pub const Type = enum {
     }
 
     pub fn allowsOperation(self: Type, operation: Node.Kind) bool {
+        if (self == .NotAnalized) return true;
         return switch (operation) {
-            .UnaryMinus, .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash => self.isInt() or self.isFloat(),
+            .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash => self.isInt() or self.isFloat(),
+            .UnaryMinus => (self.isInt() and !self.isUnsigned()) or self.isFloat(),
             .PlusEquals, .MinusEquals, .StarEquals, .SlashEquals => self.isInt() or self.isFloat(),
             .BinaryPercent, .PercentEquals => self.isInt(),
             .BinaryDoubleEquals, .BinaryBangEquals => self.isInt() or self.isFloat() or self.isBool() or self.isType(),
@@ -95,13 +98,6 @@ pub const Type = enum {
             .ComptimeFloat => to.isFloat(),
             else => self == to,
         };
-    }
-
-    pub fn canFit(
-        self: Type,
-    ) bool {
-        // TODO: add check if the number can fit inside the type
-        _ = self;
     }
 
     pub fn subsetType(left: Type, right: Type) Error!Type {
@@ -146,6 +142,12 @@ pub const Type = enum {
 
     inline fn isType(self: Type) bool {
         return self == .Type;
+    }
+    inline fn isUnsigned(self: Type) bool {
+        return switch (self) {
+            .U8, .U16, .U32, .U64, .U128 => true,
+            else => false,
+        };
     }
 };
 

@@ -6,12 +6,15 @@ const File = @import("file.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
 const Declaration = @import("declaration.zig");
+const Builtin = @import("builtin.zig");
 // TODO: refactor for more safety, use self.expect
 
 const Semantic = @This();
 allocator: std.mem.Allocator,
 printer: Printer,
 file: *File,
+lazy_analysis: bool,
+lazy_visited: std.StringArrayHashMap(void),
 
 pub const Error = error{
     ParsingFailed,
@@ -20,13 +23,14 @@ pub const Error = error{
 pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Semantic {
     return .{
         .allocator = allocator,
-        .file = file,
         .printer = printer,
+        .file = file,
+        .lazy_analysis = false,
+        .lazy_visited = .init(allocator),
     };
 }
 
 pub fn analyze(self: *Semantic) !void {
-    // TODO: make global scope lazily analyzed
     try self.populateGlobalScope();
     try self.startAnalysisFromMain();
     self.file.printScopes();
@@ -68,20 +72,6 @@ inline fn isAtEnd(self: *Semantic) bool {
     return self.isIndexAtEnd(self.file.selected);
 }
 
-fn getIfInScope(self: *Semantic, identifier: []const u8) ?Declaration {
-    if (self.file.global_scope.get(identifier)) |id| {
-        return id;
-    }
-    var i: usize = self.file.scopes.items.len;
-    while (i > 1) : (i -= 1) {
-        const scope = self.file.scopes.items[i - 1];
-        if (scope.get(identifier)) |id| {
-            return id;
-        }
-    }
-    return null;
-}
-
 fn getPtrIfInScope(self: *Semantic, identifier: []const u8) ?*Declaration {
     if (self.file.global_scope.getPtr(identifier)) |id| {
         return id;
@@ -97,7 +87,7 @@ fn getPtrIfInScope(self: *Semantic, identifier: []const u8) ?*Declaration {
 }
 
 inline fn isInScope(self: *Semantic, identifier: []const u8) bool {
-    return self.getIfInScope(identifier) != null;
+    return self.getPtrIfInScope(identifier) != null;
 }
 
 fn getCurrentScope(self: *Semantic) *std.StringHashMap(Declaration) {
@@ -110,13 +100,14 @@ fn getCurrentScope(self: *Semantic) *std.StringHashMap(Declaration) {
 fn reportError(self: *Semantic, comptime fmt: []const u8, args: anytype) Error {
     self.printer.print(fmt, args);
     self.printer.flush();
-    if (options.debug) {
+    if (self.file.options.debug) {
         @panic("Stack Trace!!!\n");
     }
     return Error.ParsingFailed;
 }
 
 fn populateGlobalScope(self: *Semantic) Error!void {
+    self.lazy_analysis = true;
     while (!self.isAtEnd()) {
         const node = self.peek();
         switch (node.kind) {
@@ -126,12 +117,82 @@ fn populateGlobalScope(self: *Semantic) Error!void {
             else => return self.reportError("Unsupported node for populateGlobalScope: {any}\n", .{node}),
         }
     }
+    try self.populateNotAnalized();
+    self.lazy_analysis = false;
+}
+
+fn populateNotAnalized(self: *Semantic) Error!void {
+    self.printer.printColor("\n<Magenta:Pre>", .{});
+    self.file.printScopes();
+    var analized = false;
+    var i: usize = 0;
+    while (!analized) {
+        i += 1;
+        self.printer.printColor("\n<Magenta:Mid:{d}>", .{i});
+        self.file.printScopes();
+
+        // self.lazy_visited = .init(self.allocator);
+        // if (self.lazy_analysis) {
+        //     if (self.lazy_visited.contains(node_name)) {
+        //         return self.reportError("Dependency cycles are not allowed end: {any}\n", .{node});
+        //     }
+        //     try self.lazy_visited.put(node_name, void{});
+        // }
+        analized = true;
+        var iterator = self.file.global_scope.iterator();
+        while (iterator.next()) |entry| {
+            const declaration = entry.value_ptr;
+            const name = entry.key_ptr.*;
+            if (declaration.kind == .PubFn or declaration.kind == .Fn) continue;
+            if (declaration.symbol_type != .NotAnalized and declaration.declared_type != .NotAnalized) continue;
+
+            self.printer.dprintsn("");
+            self.printer.dprintsn(entry.key_ptr.*);
+            self.printer.dprintanyn(declaration.declared_type);
+            self.printer.dprintanyn(declaration.symbol_type);
+
+            if (declaration.declared_type == .NotAnalized) {
+                // TODO: add null check
+                self.printer.dprintsn("new declared");
+                self.lazy_analysis = true;
+                const declared_type = try self.resolveTypeIdentifier(declaration.node_index.? + 1);
+                self.lazy_analysis = false;
+                self.printer.dprintanyn(declared_type);
+                if (declared_type == .NotAnalized) {
+                    analized = false;
+                } else {
+                    declaration.declared_type = declared_type;
+                }
+            }
+            if (declaration.symbol_type == .NotAnalized) {
+                self.printer.dprintsn("new expreession");
+                const expression_type = try self.inferType(declaration.node_index.? + 3);
+                self.printer.dprintanyn(expression_type);
+                if (expression_type == .NotAnalized) {
+                    analized = false;
+                } else {
+                    declaration.symbol_type = expression_type;
+                }
+                declaration.symbol_type = expression_type;
+            }
+            if (declaration.symbol_type != .NotAnalized and declaration.declared_type != .NotAnalized) {
+                if (declaration.declared_type) |_| {
+                    if (!declaration.symbol_type.equals(declaration.declared_type.?)) {
+                        return self.reportError("Type mismatch in declaration of '{s}', expected {any}, got {any}\n", .{ name, declaration.declared_type, declaration.symbol_type });
+                    }
+                    declaration.symbol_type = declaration.declared_type.?;
+                }
+            }
+        }
+    }
+    self.printer.printColor("<Magenta:After>\n", .{});
 }
 
 fn declarationNode(self: *Semantic, comptime is_public: bool) !void {
     const declaration = self.peek();
     self.advance();
 
+    const identifier_index = self.file.selected;
     const identifier_name = self.peek().string(self.file);
     self.advance();
     if (Declaration.Type.isPrimitive(identifier_name)) {
@@ -141,16 +202,18 @@ fn declarationNode(self: *Semantic, comptime is_public: bool) !void {
         return self.reportError("Cannot declare variable '{s}', shadows declaration\n", .{identifier_name});
     }
 
-    const type_identifier = self.peek();
-    const type_index = self.file.selected;
-    self.advance();
+    const type_expression_index = self.file.selected;
+    self.advanceWithChildren();
 
     const expression_index = self.file.selected;
     self.advanceWithChildren();
 
     const expression_type = try self.inferType(expression_index);
-    const declared_type = if (type_identifier.token_index) |_| try self.resolveTypeIdentifier(type_index) else expression_type;
-    if (!declared_type.equals(expression_type)) {
+    const declared_type = try self.resolveTypeIdentifier(type_expression_index) orelse blk: {
+        self.printer.dprintsn("null ret");
+        break :blk expression_type;
+    };
+    if (expression_type != .NotAnalized and declared_type != .NotAnalized and !declared_type.equals(expression_type)) {
         return self.reportError("Type mismatch in declaration of '{s}', expected {any}, got {any}\n", .{ identifier_name, declared_type, expression_type });
     }
 
@@ -166,7 +229,8 @@ fn declarationNode(self: *Semantic, comptime is_public: bool) !void {
     try current_scope.put(identifier_name, .{
         .kind = kind,
         .symbol_type = declared_type,
-        .node_index = expression_index,
+        .declared_type = declared_type,
+        .node_index = identifier_index,
     });
 }
 
@@ -186,6 +250,7 @@ fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
         .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash, .BinaryPercent, .BinaryDoubleEquals, .BinaryBangEquals, .BinaryGraterThan, .BinaryGraterEqualsThan, .BinaryLesserThan, .BinaryLesserEqualsThan, .BinaryAnd, .BinaryOr, .BinaryCaret => {
             const left_type = try self.inferType(node_index + 1);
             const right_type = try self.inferType(node_index + 1 + self.toAdvanceWithChildren(node_index + 1));
+            if (left_type == .NotAnalized or right_type == .NotAnalized) return .NotAnalized;
             if (!left_type.equals(right_type)) {
                 return self.reportError("Type mismatch in binary operator, expected {any}, got {any}\n", .{ left_type, right_type });
             }
@@ -195,7 +260,6 @@ fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
             if (!right_type.allowsOperation(node.kind)) {
                 return self.reportError("Operation {any} is not allowed on type {any}\n", .{ node.kind, right_type });
             }
-
             return switch (node.kind) {
                 .BinaryDoubleEquals, .BinaryBangEquals, .BinaryGraterThan, .BinaryGraterEqualsThan, .BinaryLesserThan, .BinaryLesserEqualsThan, .BinaryAnd, .BinaryOr => .Bool,
                 else => Declaration.Type.subsetType(left_type, right_type) catch {
@@ -208,35 +272,144 @@ fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
             if (Declaration.Type.isPrimitive(node_name)) {
                 return .Type;
             }
-            // change for lazy analysis, as identifiers may not be in scope yet
             if (self.getPtrIfInScope(node_name)) |declaration| {
                 declaration.used = true;
                 return declaration.symbol_type;
+            }
+            if (self.lazy_analysis) {
+                return .NotAnalized;
             }
             return self.reportError("Undefined identifier '{s}'\n", .{node_name});
         },
         .Expression, .Grouping => return self.inferType(node_index + 1),
         .Call => {
+            if (self.lazy_analysis) {
+                return self.reportError("Cannot call functions on top level declarations\n", .{});
+            }
             const prev_selected = self.file.selected;
             self.file.selected = node_index;
             const function_type = try self.callNode(null);
             self.file.selected = prev_selected;
             return function_type;
         },
+        .Builtin => {
+            const identifier = self.get(node_index + 1);
+            const identifier_name = identifier.string(self.file);
+            const builtin = Builtin.lookup(identifier_name) orelse {
+                return self.reportError("Builtin {any} does not exist\n", .{identifier_name});
+            };
+            var number_of_arguments: u32 = 0;
+            var return_type: Declaration.Type = undefined;
+            switch (builtin) {
+                .Typeof => {
+                    number_of_arguments = 1;
+                    return_type = .Type;
+                },
+                else => return self.reportError("Builtin {any} cannot have its type infered\n", .{identifier_name}),
+            }
+
+            const arguments_index = node_index + 2;
+            const arguments = self.get(arguments_index);
+            if (arguments.children != number_of_arguments) {
+                return self.reportError("Builtin {any} requires {d} arguments, got {d}\n", .{ identifier_name, number_of_arguments, arguments.children });
+            }
+            var i: u32 = 0;
+            var j: u32 = 1;
+            while (i < arguments.children) {
+                self.printer.dprintanyn(self.get(arguments_index + j + 1));
+                // TODO: verify arguments types
+                _ = try self.inferType(arguments_index + j + 1);
+                j += self.toAdvanceWithChildren(arguments_index + j);
+                i += 1;
+            }
+            return return_type;
+        },
         else => return self.reportError("Unsupported node for inferType: {any}\n", .{node}),
     }
 }
 
-fn resolveTypeIdentifier(self: *Semantic, node_index: u32) !Declaration.Type {
-    // change for lazy analysis, as identifiers may not be in scope yet
-    const node = self.get(node_index);
-    const node_name = node.string(self.file);
-    if (Declaration.Type.lookup(node_name)) |t| {
-        return t;
-    } else if (self.getIfInScope(node_name)) |declaration| {
-        return self.resolveTypeIdentifier(declaration.node_index.? + 1);
+fn resolveTypeIdentifier(self: *Semantic, node_index: u32) !?Declaration.Type {
+    // // TODO: make it expression to allow const b: @typeof(a) = ...
+    const start_node = self.get(node_index);
+    self.printer.dprintanyn(start_node);
+    self.printer.dprintsn("0");
+    if (start_node.children == 0) {
+        self.printer.dprintsn("nnnnnn");
+        return null;
     }
-    return self.reportError("Unknown type identifier '{s}'\n", .{node_name});
+
+    const node = self.get(node_index + 1);
+    self.printer.dprintsn("1");
+    self.printer.dprintanyn(node.kind);
+    switch (node.kind) {
+        .Identifier => {
+            self.printer.dprintsn("2");
+            // defer self.printer.dprintsn("END");
+            // self.printer.printString("Node: ");
+            // const node = self.get(node_index);
+            // self.printer.dprintanyn(node);
+            // if (node.token_index == null) {
+            //     if (node.kind == .Builtin) {
+            //         const fa = self.get(node_index + 5);
+            //         const fan = fa.string(self.file);
+            //         if (Declaration.Type.isPrimitive(fan)) {
+            //             self.printer.printString("Primitive Type: ");
+            //             self.printer.dprintanyn(.Type);
+            //             return .Type;
+            //         } else if (self.getPtrIfInScope(fan)) |declaration| {
+            //             declaration.used = true; // TODO:
+            //             return declaration.symbol_type;
+            //         } else if (self.lazy_analysis) {
+            //             self.printer.printString("Did not find declaration");
+            //             self.printer.dprintanyn(.NotAnalized);
+            //             return .NotAnalized;
+            //         } else {
+            //             return self.reportError("Unknown type identifier '{s}'\n", .{fan});
+            //         }
+            //     } else {
+            //         return null;
+            //     }
+            // }
+            //
+            const node_name = node.string(self.file);
+            if (Declaration.Type.lookup(node_name)) |t| {
+                return t;
+            } else if (self.getPtrIfInScope(node_name)) |declaration| {
+                declaration.used = true;
+                // a Xt Xe
+                // ^ + X
+                const declaration_index = declaration.node_index.?;
+                const toAdvanceTypeExpression = self.toAdvanceWithChildren(declaration_index + 1);
+                return self.resolveTypeIdentifier(declaration_index + toAdvanceTypeExpression + 1);
+            } else if (self.lazy_analysis) {
+                return .NotAnalized;
+            } else {
+                return self.reportError("Unknown type identifier '{s}'\n", .{node_name});
+            }
+        },
+        .Builtin => {
+            // const fa = self.get(node_index + 5);
+            // const fan = fa.string(self.file);
+            // if (Declaration.Type.isPrimitive(fan)) {
+            //     self.printer.printString("Primitive Type: ");
+            //     self.printer.dprintanyn(.Type);
+            //     return .Type;
+            // } else if (self.getPtrIfInScope(fan)) |declaration| {
+            //     declaration.used = true; // TODO:
+            //     return declaration.symbol_type;
+            // } else if (self.lazy_analysis) {
+            //     self.printer.printString("Did not find declaration");
+            //     self.printer.dprintanyn(.NotAnalized);
+            //     return .NotAnalized;
+            // } else {
+            //     return self.reportError("Unknown type identifier '{s}'\n", .{fan});
+            // }
+            self.printer.dprintanyn(node);
+            return null;
+        },
+        // .Call => {},
+        else => return self.reportError("Type has to be a primitive, identifier of type or builtin returning a type, found {any}\n", .{node.kind}),
+    }
 }
 
 fn functionNode(self: *Semantic, is_public: bool) !void {
@@ -253,6 +426,7 @@ fn functionNode(self: *Semantic, is_public: bool) !void {
     try current_scope.put(node_name, .{
         .kind = kind,
         .symbol_type = symbol_type,
+        .declared_type = symbol_type,
         .node_index = node_index,
     });
 }
@@ -319,7 +493,8 @@ fn semanticPass(self: *Semantic) Error!void {
         .Scope => try self.scopeNode(),
         .ExpressionStatement => try self.expressionStatementNode(),
         .Return => try self.returnNode(),
-        .IgnoreResult => try self.ignoreResult(),
+        .IgnoreResult => try self.ignoreResultNode(),
+        .Builtin => try self.builtinNode(),
         else => return self.reportError("Unsupported node for semanticPass: {any}\n", .{node}),
     }
 }
@@ -340,7 +515,7 @@ fn callNode(self: *Semantic, required_type: ?Declaration.Type) !Declaration.Type
     const function_indentifier = self.peek();
     self.advance();
     const function_name = function_indentifier.string(self.file);
-    const declaration = self.getIfInScope(function_name) orelse {
+    const declaration = self.getPtrIfInScope(function_name) orelse {
         return self.reportError("Undefined function '{s}'\n", .{function_name});
     };
 
@@ -390,6 +565,7 @@ fn callNode(self: *Semantic, required_type: ?Declaration.Type) !Declaration.Type
         try parameters_scope.put(parameter_name, .{
             .kind = .Var,
             .symbol_type = parameter_type,
+            .declared_type = parameter_type,
             .node_index = parameters_index + i,
         });
         i += 3;
@@ -424,7 +600,7 @@ fn checkScopeVarUsage(self: *Semantic, is_function_scope: bool) !void {
                 if (declaration.used == false) {
                     return self.reportError("'{s}' declared but never used\n", .{name});
                 }
-                if (declaration.muated == false and !is_function_scope) {
+                if (declaration.mutated == false and !is_function_scope) {
                     return self.reportError("'{s}' declared as var but never mutated\n", .{name});
                 }
             },
@@ -444,7 +620,7 @@ fn mutationNode(self: *Semantic) !void {
     if (identifier_declaration.kind == .Const or identifier_declaration.kind == .PubConst) {
         return self.reportError("Cannot assign to constant {s}\n", .{identifier_name});
     }
-    identifier_declaration.muated = true;
+    identifier_declaration.mutated = true;
     identifier_declaration.used = true;
 
     const operation_node = self.peek();
@@ -471,12 +647,39 @@ fn returnNode(self: *Semantic) !void {
         _ = try self.inferType(self.file.selected);
         self.advanceWithChildren();
     }
-    self.printer.dprintanyn(node);
 }
 
-fn ignoreResult(self: *Semantic) !void {
+fn ignoreResultNode(self: *Semantic) !void {
     self.advance();
     self.advance();
     _ = try self.inferType(self.file.selected);
     self.advanceWithChildren();
+}
+
+fn builtinNode(self: *Semantic) !void {
+    self.advance();
+    const identifier = self.peek();
+    self.advance();
+    const identifier_name = identifier.string(self.file);
+    const builtin = Builtin.lookup(identifier_name) orelse {
+        return self.reportError("Builtin {any} does not exist\n", .{identifier_name});
+    };
+    const number_of_arguments: ?u32 = null;
+    switch (builtin) {
+        .Print => {},
+        else => return self.reportError("Builtin {any} cannot have its type infered\n", .{identifier_name}),
+    }
+
+    const arguments = self.peek();
+    self.advance();
+    if (number_of_arguments != null and arguments.children != number_of_arguments) {
+        return self.reportError("Builtin {any} requires {d} arguments, got {d}\n", .{ identifier_name, number_of_arguments, arguments.children });
+    }
+    var i: u32 = 0;
+    while (i < arguments.children) : (i += 1) {
+        // TODO: verify arguments types
+        const argument_index = self.file.selected;
+        _ = try self.inferType(argument_index + 1);
+        self.advanceWithChildren();
+    }
 }

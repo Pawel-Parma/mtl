@@ -10,6 +10,7 @@ kind: Kind,
 
 pub const Kind = enum {
     Expression,
+    TypeExpression,
 
     UnaryMinus,
 
@@ -45,7 +46,6 @@ pub const Kind = enum {
     Identifier,
     TrueLiteral,
     FalseLiteral,
-    TypeIdentifier,
 
     ExpressionStatement,
     Mutation,
@@ -68,6 +68,8 @@ pub const Kind = enum {
     Return,
 
     Scope,
+
+    Builtin,
 };
 
 pub inline fn token(self: *const Node, file: *File) ?Token {

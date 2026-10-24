@@ -1,14 +1,15 @@
 const std = @import("std");
 
 const Printer = @import("printer.zig");
+const Options = @import("options.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
 const Declaration = @import("declaration.zig");
-const options = @import("options.zig");
 
 const File = @This();
 allocator: std.mem.Allocator,
 printer: Printer,
+options: *Options,
 path: []const u8,
 buffer: []const u8,
 tokens: std.ArrayList(Token) = .empty,
@@ -23,10 +24,11 @@ global_scope: *std.StringHashMap(Declaration),
 all_scopes: std.ArrayList(*std.StringHashMap(Declaration)),
 scopes: std.ArrayList(*std.StringHashMap(Declaration)),
 
-pub fn init(allocator: std.mem.Allocator, printer: Printer, file_path: []const u8) !File {
+pub fn init(allocator: std.mem.Allocator, printer: Printer, options: *Options, file_path: []const u8) !File {
     return .{
         .allocator = allocator,
         .printer = printer,
+        .options = options,
         .path = file_path,
         .buffer = try readBuffer(allocator, file_path),
         .global_scope = try makeScope(allocator),
@@ -36,13 +38,11 @@ pub fn init(allocator: std.mem.Allocator, printer: Printer, file_path: []const u
 }
 
 pub fn ensureTokensCapacity(self: *File) !void {
-    const initialCapacity = @min(512, self.buffer.len / 2);
-    try self.tokens.ensureTotalCapacityPrecise(self.allocator, initialCapacity);
+    try self.tokens.ensureTotalCapacityPrecise(self.allocator, self.buffer.len / 3);
 }
 
 pub fn ensureAstCapacity(self: *File) !void {
-    const initialCapacity = @min(512, self.tokens.items.len / 2);
-    try self.ast.ensureTotalCapacity(self.allocator, initialCapacity);
+    try self.ast.ensureTotalCapacity(self.allocator, self.tokens.items.len);
 }
 
 pub fn getLine(buffer: []const u8, line_start: usize, start_index: usize, default: usize) []const u8 {
@@ -90,7 +90,7 @@ pub fn lineInfo(self: *File, token: Token) struct {
 }
 
 pub fn printTokens(self: *File) void {
-    if (!options.debug) {
+    if (!self.options.debug) {
         return;
     }
     self.printer.printColor("\n=== TOKENS (<Yellow:{d}>) ===\n", .{self.tokens.items.len});
@@ -111,7 +111,7 @@ pub fn printTokens(self: *File) void {
 }
 
 pub fn printAst(self: *File) void {
-    if (!options.debug) {
+    if (!self.options.debug) {
         return;
     }
     self.printer.printColor("\n=== AST (<Yellow:{d}>) ===\n", .{self.ast.items.len});
@@ -152,7 +152,7 @@ pub fn printAst(self: *File) void {
 }
 
 pub fn printScopes(self: *File) void {
-    if (!options.debug) {
+    if (!self.options.debug) {
         return;
     }
     self.printer.printColor("\n=== SCOPES (<Yellow:{d}>) ===\n", .{self.all_scopes.items.len + 1});
@@ -171,9 +171,20 @@ fn printScope(self: *File, scope: *std.StringHashMap(Declaration)) void {
     var max_name_len: usize = 0;
     var max_symbol_len: usize = 0;
     var it = scope.iterator();
+    const Entry = struct {
+        name: []const u8,
+        decl: Declaration,
+
+        fn lessThan(_: void, a: @This(), b: @This()) bool {
+            return std.mem.lessThan(u8, a.name, b.name);
+        }
+    };
+    var list = std.ArrayList(Entry).empty;
+
     while (it.next()) |entry| {
         const decl = entry.value_ptr.*;
         const name = entry.key_ptr.*;
+        list.append(self.allocator, .{ .name = name, .decl = decl }) catch @panic("Could not append OutOfMemory");
 
         const kind_len = std.fmt.count("{any}", .{decl.kind});
         const smbl_len = std.fmt.count("{any}", .{decl.symbol_type});
@@ -181,11 +192,16 @@ fn printScope(self: *File, scope: *std.StringHashMap(Declaration)) void {
         if (name.len > max_name_len) max_name_len = name.len;
         if (smbl_len > max_symbol_len) max_symbol_len = smbl_len;
     }
+    std.sort.block(
+        Entry,
+        list.items,
+        {},
+        Entry.lessThan,
+    );
 
-    var scope_it = scope.iterator();
-    while (scope_it.next()) |entry| {
-        const name = entry.key_ptr.*;
-        const declaration = entry.value_ptr.*;
+    for (list.items) |entry| {
+        const name = entry.name;
+        const declaration = entry.decl;
 
         self.printer.printColor("  <Blue:{any}>", .{declaration.kind});
         const kind_len = std.fmt.count("{any}", .{declaration.kind});
