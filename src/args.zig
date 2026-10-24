@@ -7,11 +7,11 @@ const Args = @This();
 allocator: std.mem.Allocator,
 printer: Printer,
 options: *Options,
-args: [][:0]u8,
+args: []const [:0]const u8,
 args_map: std.StringHashMap(?[]const u8),
 
-pub fn init(allocator: std.mem.Allocator, printer: Printer, options: *Options) !Args {
-    const args = try std.process.argsAlloc(allocator);
+pub fn init(allocator: std.mem.Allocator, printer: Printer, raw_args: std.process.Args, options: *Options) !Args {
+    const args = try raw_args.toSlice(allocator);
     return .{
         .allocator = allocator,
         .printer = printer,
@@ -22,7 +22,7 @@ pub fn init(allocator: std.mem.Allocator, printer: Printer, options: *Options) !
 }
 
 pub fn deinit(self: *Args) void {
-    std.process.argsFree(self.allocator, self.args);
+    self.allocator.free(self.args);
     self.args_map.deinit();
 }
 
@@ -69,7 +69,7 @@ fn printVersion(self: *const Args) void {
     self.printer.print("0.0.0\n", .{});
 }
 
-fn createArgsMap(allocator: std.mem.Allocator, args: [][:0]u8) !std.StringHashMap(?[]const u8) {
+fn createArgsMap(allocator: std.mem.Allocator, args: []const [:0]const u8) !std.StringHashMap(?[]const u8) {
     var map = std.StringHashMap(?[]const u8).init(allocator);
     for (args[1..]) |arg| {
         if (std.mem.indexOfScalar(u8, arg, '=')) |i| {

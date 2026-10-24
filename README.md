@@ -3,7 +3,7 @@ A small experimental compiler front-end written in Zig.
 
 > [!important]  
 > This project uses nominated zig versions  
-> nominated version: 0.16.0-dev.368+2a97e0af6
+> nominated version: 0.16.0
 
 ## Build
 1. Install the nominated zig version 

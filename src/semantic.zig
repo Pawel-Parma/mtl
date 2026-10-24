@@ -14,7 +14,7 @@ allocator: std.mem.Allocator,
 printer: Printer,
 file: *File,
 lazy_analysis: bool,
-lazy_visited: std.StringArrayHashMap(void),
+lazy_visited: std.StringArrayHashMapUnmanaged(void),
 
 pub const Error = error{
     ParsingFailed,
@@ -26,7 +26,7 @@ pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Semanti
         .printer = printer,
         .file = file,
         .lazy_analysis = false,
-        .lazy_visited = .init(allocator),
+        .lazy_visited = .empty,
     };
 }
 
@@ -122,14 +122,14 @@ fn populateGlobalScope(self: *Semantic) Error!void {
 }
 
 fn populateNotAnalized(self: *Semantic) Error!void {
-    self.printer.printColor("\n<Magenta:Pre>", .{});
-    self.file.printScopes();
+    // self.printer.printColor("\n<Magenta:Pre>", .{});
+    // self.file.printScopes();
     var analized = false;
     var i: usize = 0;
     while (!analized) {
         i += 1;
-        self.printer.printColor("\n<Magenta:Mid:{d}>", .{i});
-        self.file.printScopes();
+        // self.printer.printColor("\n<Magenta:Mid:{d}>", .{i});
+        // self.file.printScopes();
 
         // self.lazy_visited = .init(self.allocator);
         // if (self.lazy_analysis) {
@@ -146,18 +146,18 @@ fn populateNotAnalized(self: *Semantic) Error!void {
             if (declaration.kind == .PubFn or declaration.kind == .Fn) continue;
             if (declaration.symbol_type != .NotAnalized and declaration.declared_type != .NotAnalized) continue;
 
-            self.printer.dprintsn("");
-            self.printer.dprintsn(entry.key_ptr.*);
-            self.printer.dprintanyn(declaration.declared_type);
-            self.printer.dprintanyn(declaration.symbol_type);
+            // self.printer.dprintsn("");
+            // self.printer.dprintsn(entry.key_ptr.*);
+            // self.printer.dprintanyn(declaration.declared_type);
+            // self.printer.dprintanyn(declaration.symbol_type);
 
             if (declaration.declared_type == .NotAnalized) {
                 // TODO: add null check
-                self.printer.dprintsn("new declared");
+                // self.printer.dprintsn("new declared");
                 self.lazy_analysis = true;
                 const declared_type = try self.resolveTypeIdentifier(declaration.node_index.? + 1);
                 self.lazy_analysis = false;
-                self.printer.dprintanyn(declared_type);
+                // self.printer.dprintanyn(declared_type);
                 if (declared_type == .NotAnalized) {
                     analized = false;
                 } else {
@@ -165,9 +165,9 @@ fn populateNotAnalized(self: *Semantic) Error!void {
                 }
             }
             if (declaration.symbol_type == .NotAnalized) {
-                self.printer.dprintsn("new expreession");
+                // self.printer.dprintsn("new expreession");
                 const expression_type = try self.inferType(declaration.node_index.? + 3);
-                self.printer.dprintanyn(expression_type);
+                // self.printer.dprintanyn(expression_type);
                 if (expression_type == .NotAnalized) {
                     analized = false;
                 } else {
@@ -185,7 +185,7 @@ fn populateNotAnalized(self: *Semantic) Error!void {
             }
         }
     }
-    self.printer.printColor("<Magenta:After>\n", .{});
+    // self.printer.printColor("<Magenta:After>\n", .{});
 }
 
 fn declarationNode(self: *Semantic, comptime is_public: bool) !void {
@@ -210,7 +210,7 @@ fn declarationNode(self: *Semantic, comptime is_public: bool) !void {
 
     const expression_type = try self.inferType(expression_index);
     const declared_type = try self.resolveTypeIdentifier(type_expression_index) orelse blk: {
-        self.printer.dprintsn("null ret");
+        // self.printer.dprintsn("null ret");
         break :blk expression_type;
     };
     if (expression_type != .NotAnalized and declared_type != .NotAnalized and !declared_type.equals(expression_type)) {
@@ -316,7 +316,7 @@ fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
             var i: u32 = 0;
             var j: u32 = 1;
             while (i < arguments.children) {
-                self.printer.dprintanyn(self.get(arguments_index + j + 1));
+                // self.printer.dprintanyn(self.get(arguments_index + j + 1));
                 // TODO: verify arguments types
                 _ = try self.inferType(arguments_index + j + 1);
                 j += self.toAdvanceWithChildren(arguments_index + j);
@@ -331,19 +331,19 @@ fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
 fn resolveTypeIdentifier(self: *Semantic, node_index: u32) !?Declaration.Type {
     // // TODO: make it expression to allow const b: @typeof(a) = ...
     const start_node = self.get(node_index);
-    self.printer.dprintanyn(start_node);
-    self.printer.dprintsn("0");
+    // self.printer.dprintanyn(start_node);
+    // self.printer.dprintsn("0");
     if (start_node.children == 0) {
-        self.printer.dprintsn("nnnnnn");
+        // self.printer.dprintsn("nnnnnn");
         return null;
     }
 
     const node = self.get(node_index + 1);
-    self.printer.dprintsn("1");
-    self.printer.dprintanyn(node.kind);
+    // self.printer.dprintsn("1");
+    // self.printer.dprintanyn(node.kind);
     switch (node.kind) {
         .Identifier => {
-            self.printer.dprintsn("2");
+            // self.printer.dprintsn("2");
             // defer self.printer.dprintsn("END");
             // self.printer.printString("Node: ");
             // const node = self.get(node_index);
@@ -404,7 +404,7 @@ fn resolveTypeIdentifier(self: *Semantic, node_index: u32) !?Declaration.Type {
             // } else {
             //     return self.reportError("Unknown type identifier '{s}'\n", .{fan});
             // }
-            self.printer.dprintanyn(node);
+            // self.printer.dprintanyn(node);
             return null;
         },
         // .Call => {},

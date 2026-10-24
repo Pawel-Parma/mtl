@@ -24,13 +24,13 @@ global_scope: *std.StringHashMap(Declaration),
 all_scopes: std.ArrayList(*std.StringHashMap(Declaration)),
 scopes: std.ArrayList(*std.StringHashMap(Declaration)),
 
-pub fn init(allocator: std.mem.Allocator, printer: Printer, options: *Options, file_path: []const u8) !File {
+pub fn init(io: std.Io, allocator: std.mem.Allocator, printer: Printer, options: *Options, file_path: []const u8) !File {
     return .{
         .allocator = allocator,
         .printer = printer,
         .options = options,
         .path = file_path,
-        .buffer = try readBuffer(allocator, file_path),
+        .buffer = try readBuffer(io, allocator, file_path),
         .global_scope = try makeScope(allocator),
         .all_scopes = .empty,
         .scopes = .empty,
@@ -50,13 +50,8 @@ pub fn getLine(buffer: []const u8, line_start: usize, start_index: usize, defaul
     return buffer[line_start..line_end];
 }
 
-fn readBuffer(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
-    const file = try std.fs.cwd().openFile(file_path, .{});
-    defer file.close();
-    const file_size = try file.getEndPos();
-    const buffer = try allocator.alloc(u8, file_size);
-    _ = try file.readAll(buffer);
-    return buffer;
+fn readBuffer(io: std.Io, allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
+    return std.Io.Dir.cwd().readFileAlloc(io, file_path, allocator, .unlimited);
 }
 
 pub fn makeScope(allocator: std.mem.Allocator) !*std.StringHashMap(Declaration) {

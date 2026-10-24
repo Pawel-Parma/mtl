@@ -9,22 +9,22 @@ const Tokenizer = @import("tokenizer.zig");
 const Parser = @import("parser.zig");
 const Semantic = @import("semantic.zig");
 
-pub fn main() u8 {
+pub fn main(init: std.process.Init) u8 {
+    const io = init.io;
+
+    const allocator = init.gpa;
+    var arena = init.arena;
+    const arena_allocator = arena.allocator();
+
     var stdout_buffer: [2048]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
     const stdout = &stdout_writer.interface;
     const printer = Printer.init(stdout);
     defer printer.flush();
 
-    const allocator = std.heap.page_allocator;
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const arena_allocator = arena.allocator();
-
     var options = Options.default;
-
-    var args = Args.init(allocator, printer, &options) catch |err| {
-        printer.printError("Failed to allocate program arguments: {any}\n", .{err});
+    var args = Args.init(allocator, printer, init.minimal.args, &options) catch |err| {
+        printer.printError("failed to allocate program arguments: {any}\n", .{err});
         return Code.AllocatingArgsFailed;
     };
     defer args.deinit();
@@ -37,7 +37,7 @@ pub fn main() u8 {
         args.printUsage();
         return Code.NoFilePathProvided;
     };
-    var file = File.init(arena_allocator, printer, &options, file_path) catch |err| {
+    var file = File.init(io, arena_allocator, printer, &options, file_path) catch |err| {
         printer.printError("Failed to read file: {any}\n", .{err});
         return Code.ReadingFileFailed;
     };
