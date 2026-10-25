@@ -153,14 +153,14 @@ fn numberLiteralToken(self: *Tokenizer) Token {
         switch (self.peek()) {
             'b', 'B' => {
                 if (self.isNextAtEnd() or (self.peekNext() < '0' or self.peekNext() > '1')) {
-                    return .{ .kind = .IntLiteral, .start = start, .end = self.file.position };
+                    return .{ .kind = .IntDecimalLiteral, .start = start, .end = self.file.position };
                 }
                 self.advanceToEndOfNumber(.Bin);
                 return .{ .kind = .IntBinaryLiteral, .start = start, .end = self.file.position };
             },
             'o', 'O' => {
                 if (self.isNextAtEnd() or (self.peekNext() < '0' or self.peekNext() > '8')) {
-                    return .{ .kind = .IntLiteral, .start = start, .end = self.file.position };
+                    return .{ .kind = .IntDecimalLiteral, .start = start, .end = self.file.position };
                 }
                 self.advanceToEndOfNumber(.Oct);
                 return .{ .kind = .IntOctalLiteral, .start = start, .end = self.file.position };
@@ -168,7 +168,7 @@ fn numberLiteralToken(self: *Tokenizer) Token {
             'x', 'X' => {
                 const next = self.peekNext();
                 if (self.isNextAtEnd() or !((next >= '0' and next <= '9') or (next >= 'a' and next <= 'f') or (next >= 'A' and next <= 'F'))) {
-                    return .{ .kind = .IntLiteral, .start = start, .end = self.file.position };
+                    return .{ .kind = .IntDecimalLiteral, .start = start, .end = self.file.position };
                 }
                 self.advanceToEndOfNumber(.Hex);
                 return .{ .kind = .IntHexadecimalLiteral, .start = start, .end = self.file.position };
@@ -218,7 +218,7 @@ fn numberLiteralToken(self: *Tokenizer) Token {
         self.advance();
     }
     const kind: Token.Kind = switch (has_e) {
-        false => if (is_float) .FloatLiteral else .IntLiteral,
+        false => if (is_float) .FloatLiteral else .IntDecimalLiteral,
         true => if (is_float) .FloatScientificLiteral else .IntScientificLiteral,
     };
     return .{ .kind = kind, .start = start, .end = self.file.position };

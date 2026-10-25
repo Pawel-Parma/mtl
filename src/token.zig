@@ -22,7 +22,7 @@ pub const Kind = enum {
     Equals,
     ColonEquals,
 
-    IntLiteral,
+    IntDecimalLiteral,
     IntBinaryLiteral,
     IntOctalLiteral,
     IntHexadecimalLiteral,

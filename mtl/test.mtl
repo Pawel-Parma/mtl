@@ -1,0 +1,5 @@
+pub fn main() void {
+    const i = 000.001;
+    @print(i);
+    return;
+}

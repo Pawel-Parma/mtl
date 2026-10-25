@@ -1,0 +1,118 @@
+digit_b16 = '0' - '9'
+          | 'a' - 'f'
+          | 'A' - 'F' ;
+digit_b10 = '0' - '9' ;
+digit_b8  = '0' - '7' ;
+digit_b2  = '0' - '1' ;
+
+integer_b16 = '0x'
+            , 1 * digit_b16
+            , { '_'
+              , 1 * digit_b16 } ;
+
+integer_b10_normal = 1 * digit_b10
+                   , { '_'
+                     , 1 * digit_b10 } ;
+
+integer_b10_exponent = integer_b10_normal
+                     , ( 'e'
+                       | 'E' )
+                     , integer_b10_normal ;
+
+integer_b10 = integer_b10_normal
+            | integer_b10_exponent ;
+
+integer_b8 = '0o'
+           , 1 * digit_b8
+           , { '_'
+             , 1 * digit_b8 } ;
+
+integer_b2 = '0b'
+           , 1 * digit_b2
+           , { '_'
+             , 1 * digit_b2 } ;
+
+INTEGER_LITERAL =
+                | integer_b16
+                | integer_b10
+                | integer_b8
+                | integer_b2 ;
+
+float_normal = integer_b10_normal
+             , '.'
+             , integer_b10_normal ;
+
+float_exponent = integer_b10_normal
+               , '.'
+               , integer_b10_normal
+               , [ '-' ]
+               , ( 'e'
+                 | 'E' )
+               , integer_b10_normal ;
+
+FLOAT_LITERAL = float_normal
+              | float_exponent ;
+
+IDENTIFIER = IDENTIFIER
+           | 1 * '_'
+           | 1 * ( 'a' - 'z' )
+           | 1 * ( 'A' - 'Z' ) ;
+
+(* TODO: add expression parsing *)
+EXPRESSION = INTEGER_LITERAL
+           | FLOAT_LITERAL
+           | IDENTIFIER ;
+
+STATEMET = CONST_DECLARATION
+         | VAR_DECLARATION
+         | BLOCK
+         | RETURN
+         | EXPRESSION_STATEMENT
+         | UNDERSCORE ;
+
+TOP_LEVEL_STATEMENT = PUBLIC_DECLARATION
+                    | PRIVATE_DECLARATION
+                    | STATEMET ;
+
+VAR_DECLARATION = 'var'
+                , IDENTIFIER
+                , ( [ ':'
+                    , EXPRESSION ]
+                  | ':=' )
+                , EXPRESSION
+                , ';' ;
+
+CONST_DECLARATION = 'const'
+                  , IDENTIFIER
+                  , [ ':'
+                    , EXPRESSION ]
+                  , '='
+                  , EXPRESSION
+                  , ';' ;
+
+(* TODO: add function declaration parsing *)
+FUNCTION_DECLARATION = 'fn' ;
+
+PRIVATE_DECLARATION = FUNCTION_DECLARATION
+                    | VAR_DECLARATION
+                    | CONST_DECLARATION ;
+
+PUBLIC_DECLARATION = 'pub'
+                   , PRIVATE_DECLARATION ;
+
+BLOCK = '{'
+      , 0 * STATEMET
+      , '}' ;
+
+RETURN = 'return'
+       , { EXPRESSION }
+       , ';' ;
+
+(* TODO: add expression statement parsing eg a -= 123 and call() and @builtin() *)
+EXPRESSION_STATEMENT = IDENTIFIER
+                     | '@' ;
+
+UNDERSCORE = '_'
+           , '='
+           , EXPRESSION
+           , ';' ;

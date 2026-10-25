@@ -344,10 +344,10 @@ fn parsePrefix(self: *Parser) Error![]Node {
     const token = self.peek();
     const token_index = self.advanceGetIndex();
     switch (token.kind) {
-        .Identifier, .IntLiteral, .IntBinaryLiteral, .IntOctalLiteral, .IntHexadecimalLiteral, .IntScientificLiteral, .FloatLiteral, .FloatScientificLiteral, .TrueLiteral, .FalseLiteral => {
+        .Identifier, .IntDecimalLiteral, .IntBinaryLiteral, .IntOctalLiteral, .IntHexadecimalLiteral, .IntScientificLiteral, .FloatLiteral, .FloatScientificLiteral, .TrueLiteral, .FalseLiteral => {
             const kind: Node.Kind = switch (token.kind) {
                 .Identifier => .Identifier,
-                .IntLiteral => .IntLiteral,
+                .IntDecimalLiteral => .IntLiteral,
                 .IntBinaryLiteral => .IntBinaryLiteral,
                 .IntOctalLiteral => .IntOctalLiteral,
                 .IntHexadecimalLiteral => .IntHexadecimalLiteral,
