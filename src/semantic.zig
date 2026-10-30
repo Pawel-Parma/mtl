@@ -247,7 +247,7 @@ fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
             }
             return child_type;
         },
-        .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash, .BinaryPercent, .BinaryDoubleEquals, .BinaryBangEquals, .BinaryGraterThan, .BinaryGraterEqualsThan, .BinaryLesserThan, .BinaryLesserEqualsThan, .BinaryAnd, .BinaryOr, .BinaryCaret => {
+        .BinaryPlus, .BinaryMinus, .BinaryStar, .BinarySlash, .BinaryPercent, .BinaryDoubleEquals, .BinaryBangEquals, .BinaryGraterThan, .BinaryGraterEqualsThan, .BinaryLesserThan, .BinaryLesserEqualsThan, .BinaryAnd, .BinaryOr, .BinaryXor => {
             const left_type = try self.inferType(node_index + 1);
             const right_type = try self.inferType(node_index + 1 + self.toAdvanceWithChildren(node_index + 1));
             if (left_type == .NotAnalized or right_type == .NotAnalized) return .NotAnalized;

@@ -32,8 +32,7 @@ pub fn main() void {
     o *= 6;
     o /= 7;
     o %= 8;
-    o ^= 8;
-
+\^
     call();
     _ = add(1, 2);
 

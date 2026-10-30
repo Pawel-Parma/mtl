@@ -1,5 +1,9 @@
 pub fn main() void {
-    const i = 000.001;
-    @print(i);
+    const a = 000001_;
+    const b = 0x00002_;
+    _ = a;
+    _ = b;
     return;
 }
+
+

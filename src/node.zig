@@ -30,7 +30,7 @@ pub const Kind = enum {
     UnaryNot,
     BinaryAnd,
     BinaryOr,
-    BinaryCaret,
+    BinaryXor,
 
     Grouping,
     Call,
@@ -56,7 +56,6 @@ pub const Kind = enum {
     StarEquals,
     SlashEquals,
     PercentEquals,
-    CaretEquals,
 
     Public,
     Declaration,

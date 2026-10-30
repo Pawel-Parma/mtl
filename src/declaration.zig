@@ -82,7 +82,7 @@ pub const Type = enum {
             .BinaryDoubleEquals, .BinaryBangEquals => self.isInt() or self.isFloat() or self.isBool() or self.isType(),
             .BinaryGraterThan, .BinaryGraterEqualsThan, .BinaryLesserThan, .BinaryLesserEqualsThan => self.isInt() or self.isFloat(),
             .BinaryAnd, .BinaryOr, .UnaryNot => self.isBool(),
-            .BinaryCaret, .CaretEquals => self.isInt() or self.isBool(),
+            .BinaryXor => self.isInt() or self.isBool(),
             .Equals => true,
             else => false,
         };

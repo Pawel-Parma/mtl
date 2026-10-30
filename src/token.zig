@@ -29,33 +29,35 @@ pub const Kind = enum {
     IntScientificLiteral,
     FloatLiteral,
     FloatScientificLiteral,
+    TrueLiteral,
+    FalseLiteral,
+
     Identifier,
 
     Plus,
-    PlusEquals,
     Minus,
-    MinusEquals,
     Star,
-    StarEquals,
     Slash,
-    SlashEquals,
     Percent,
+
+    PlusEquals,
+    MinusEquals,
+    StarEquals,
+    SlashEquals,
     PercentEquals,
+
+    GraterThan,
+    LesserThan,
 
     DoubleEquals,
     BangEquals,
-    GraterThan,
     GraterEqualsThan,
-    LesserThan,
     LesserEqualsThan,
 
     And,
     Not,
     Or,
-    TrueLiteral,
-    FalseLiteral,
-    Caret,
-    CaretEquals,
+    Xor,
 
     ParenLeft,
     ParenRight,
@@ -93,7 +95,7 @@ pub const Precedence = enum {
 pub inline fn precedence(self: *const Token) Precedence {
     return switch (self.kind) {
         .Or => .Or,
-        .Caret => .Xor,
+        .Xor => .Xor,
         .And => .And,
         .DoubleEquals, .BangEquals, .GraterThan, .GraterEqualsThan, .LesserThan, .LesserEqualsThan => .Equality,
         .Plus, .Minus => .Sum,
@@ -113,7 +115,7 @@ pub inline fn associativity(self: *const Token) Associativity {
     return switch (self.kind) {
         .Plus, .Minus, .Star, .Slash, .Percent => .Left,
         .DoubleEquals, .BangEquals, .GraterThan, .GraterEqualsThan, .LesserThan, .LesserEqualsThan => .Left,
-        .And, .Or, .Caret => .Left,
+        .And, .Or, .Xor => .Left,
         .Not => .Right,
         .ParenLeft => .Left,
         else => .Left,
@@ -149,7 +151,7 @@ pub fn getCorrespondingKind(char: u8) Token.Kind {
         '=' => .Equals,
         '>' => .GraterThan,
         '<' => .LesserThan,
-        '^' => .Caret,
+        '^' => .Xor,
         '!' => .Bang,
         '@' => .At,
         else => unreachable,
@@ -166,7 +168,6 @@ pub fn getCorrespondingKindEquals(char: u8) Token.Kind {
         '=' => .DoubleEquals,
         '>' => .GraterEqualsThan,
         '<' => .LesserEqualsThan,
-        '^' => .CaretEquals,
         '!' => .BangEquals,
         else => unreachable,
     };

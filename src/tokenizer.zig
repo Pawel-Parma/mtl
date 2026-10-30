@@ -31,8 +31,8 @@ pub fn tokenize(self: *Tokenizer) Error!void {
 
 pub fn nextToken(self: *Tokenizer) Token {
     return switch (self.peek()) {
-        '@', ';', ',', '(', ')', '{', '}' => self.charToken(),
-        '+', '-', '*', '%', ':', '=', '!', '>', '<', '^' => self.charEqualsToken(),
+        '@', '^', ';', ',', '(', ')', '{', '}' => self.charToken(),
+        '+', '-', '*', '%', ':', '=', '!', '>', '<' => self.charEqualsToken(),
         ' ', '\t', '\r' => self.escapeSequenceToken(),
         'a'...'z', 'A'...'Z' => self.identifierToken(),
         '_' => self.underscoreToken(),
@@ -231,7 +231,7 @@ fn advanceToEndOfNumber(self: *Tokenizer, comptime kind: enum { Bin, Oct, Hex })
         const char = self.peek();
         switch (char) {
             '0'...'1' => {},
-            '2'...'8' => switch (kind) {
+            '2'...'7' => switch (kind) {
                 .Oct, .Hex => {},
                 else => break,
             },

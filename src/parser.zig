@@ -25,7 +25,7 @@ pub fn init(allocator: std.mem.Allocator, printer: Printer, file: *File) Parser 
 pub fn parse(self: *Parser) Error!void {
     try self.file.ensureAstCapacity();
     while (!self.isAtEnd()) {
-        self.parseNode() catch {
+        self.parseTopLevelStatement() catch {
             self.synchronize();
         };
     }
@@ -35,12 +35,20 @@ pub fn parse(self: *Parser) Error!void {
     self.file.printAst();
 }
 
-fn parseNode(self: *Parser) Error!void {
+fn parseTopLevelStatement(self: *Parser) Error!void {
     const token = self.peek();
     return switch (token.kind) {
         .Var, .Const => try self.parseDeclaration(),
         .Fn => try self.parseFunction(),
         .Pub => try self.parsePub(),
+        else => self.reportError("Unexpected top level token {any}\n", .{token}),
+    };
+}
+
+fn parseStatement(self: *Parser) Error!void {
+    const token = self.peek();
+    return switch (token.kind) {
+        .Var, .Const => try self.parseDeclaration(),
         .CurlyLeft => try self.parseBlock(),
         .Return => try self.parseReturn(),
         .Identifier, .At => try self.parseExpressionStatement(),
@@ -234,7 +242,7 @@ fn parseBlock(self: *Parser) Error!void {
 
     var children: u32 = 0;
     while (!self.isAtEnd() and self.peek().kind != .CurlyRight) {
-        self.parseNode() catch {
+        self.parseStatement() catch {
             self.synchronize();
             continue;
         };
@@ -281,7 +289,7 @@ fn parseExpressionStatement(self: *Parser) !void {
                 const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
                 try self.file.ast.appendSlice(self.allocator, expression);
             },
-            .Equals, .PlusEquals, .MinusEquals, .StarEquals, .SlashEquals, .PercentEquals, .CaretEquals => {
+            .Equals, .PlusEquals, .MinusEquals, .StarEquals, .SlashEquals, .PercentEquals => {
                 try self.pushNode(.{ .kind = .Mutation, .children = 3 });
                 try self.pushNode(.{ .kind = .Identifier, .children = 0, .token_index = self.file.current });
                 self.advance();
@@ -292,7 +300,6 @@ fn parseExpressionStatement(self: *Parser) !void {
                     .StarEquals => .StarEquals,
                     .SlashEquals => .SlashEquals,
                     .PercentEquals => .PercentEquals,
-                    .CaretEquals => .CaretEquals,
                     else => unreachable,
                 };
                 try self.pushNode(.{ .kind = kind, .children = 0 });
@@ -400,7 +407,7 @@ fn parseInfixOrSuffix(self: *Parser, left: []Node) ![]Node {
     const token = self.peek();
     const token_index = self.advanceGetIndex();
     switch (token.kind) {
-        .Plus, .Minus, .Star, .Slash, .Percent, .DoubleEquals, .BangEquals, .GraterThan, .GraterEqualsThan, .LesserThan, .LesserEqualsThan, .And, .Or, .Caret => {
+        .Plus, .Minus, .Star, .Slash, .Percent, .DoubleEquals, .BangEquals, .GraterThan, .GraterEqualsThan, .LesserThan, .LesserEqualsThan, .And, .Or, .Xor => {
             const kind: Node.Kind = switch (token.kind) {
                 .Plus => .BinaryPlus,
                 .Minus => .BinaryMinus,
@@ -415,7 +422,7 @@ fn parseInfixOrSuffix(self: *Parser, left: []Node) ![]Node {
                 .LesserEqualsThan => .BinaryLesserEqualsThan,
                 .And => .BinaryAnd,
                 .Or => .BinaryOr,
-                .Caret => .BinaryCaret,
+                .Xor => .BinaryXor,
                 else => unreachable,
             };
             const operator = Node{ .kind = kind, .children = 2, .token_index = token_index };

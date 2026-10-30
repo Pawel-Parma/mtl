@@ -530,7 +530,6 @@ pub fn main() void {
     mo *= 6;
     mo /= 7;
     mo %= 8;
-    mo ^= 8;
 
     call();
     _ = add(1, 2);
