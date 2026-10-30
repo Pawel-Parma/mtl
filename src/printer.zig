@@ -32,6 +32,15 @@ pub const Ansi = struct {
         BrightCyan,
         BrightWhite,
 
+        pub fn fromString(string: []const u8) ?Ansi.Code {
+            const info = @typeInfo(Ansi.Code).@"enum";
+            inline for (info.field_names) |field_name| {
+                if (std.mem.eql(u8, field_name, string))
+                    return @field(Ansi.Code, field_name);
+            }
+            return null;
+        }
+
         pub fn code(self: Code) []const u8 {
             return switch (self) {
                 .Reset => "\x1b[0m",
@@ -158,7 +167,6 @@ pub fn printSourceLine(
 }
 
 fn resolveColorFmt(comptime fmt: []const u8) []const u8 {
-    const fields = @typeInfo(Ansi.Code).@"enum".fields;
     const open_char = '<';
     const close_char = '>';
     const sep_char = ':';
@@ -178,7 +186,7 @@ fn resolveColorFmt(comptime fmt: []const u8) []const u8 {
         if (std.mem.indexOfScalar(u8, inner, sep_char)) |colon_idx| {
             const color_name = inner[0..colon_idx];
             const rest = inner[colon_idx + 1 ..];
-            const color_opt = lookupAnsiCode(color_name, fields);
+            const color_opt = Ansi.Code.fromString(color_name);
             if (color_opt) |color| {
                 const inner_resolved = resolveColorFmt(rest);
                 out = out ++ color.code() ++ inner_resolved ++ Ansi.Code.Reset.code();
@@ -186,7 +194,7 @@ fn resolveColorFmt(comptime fmt: []const u8) []const u8 {
                 continue;
             }
         } else {
-            const code_opt = lookupAnsiCode(inner, fields);
+            const code_opt = Ansi.Code.fromString(inner);
             if (code_opt) |code| {
                 out = out ++ code.code();
                 i = end_idx;
@@ -196,12 +204,4 @@ fn resolveColorFmt(comptime fmt: []const u8) []const u8 {
         out = out ++ fmt[i .. i + 1];
     }
     return out;
-}
-
-fn lookupAnsiCode(name: []const u8, fields: anytype) ?Ansi.Code {
-    inline for (fields) |f| {
-        if (std.mem.eql(u8, f.name, name))
-            return @field(Ansi.Code, f.name);
-    }
-    return null;
 }
