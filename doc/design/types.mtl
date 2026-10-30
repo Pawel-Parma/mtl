@@ -1,0 +1,29 @@
+// Structs work basically like in zig
+// Enums work basically like in zig
+// Unions work basically like in zig
+// Tagged unions work basically like in zig
+// Errors work basically like in zig
+
+// Builtin types:
+//    i8, i16, i32, i64, i128 - signed integer with 8, 16, 32, 64, 128 bits
+//    u8, u16, u32, u64, u128 - unsigned integer with 8, 16, 32, 64, 128 bits
+//    comptime_int - compiletime known signed integer
+//    f16, f32, f64, f80, f128 - floating point number with 16, 32, 64, 80, 128 bits
+//    comptime_float - compiletime known floating point number
+//
+//    bool - boolean
+//    void - size 0 type
+//    type - type
+
+// optional type is represented as `?type_name`
+
+TODO:
+    arrays
+    slices
+    strings as slices of u8
+
+Explore:
+    Should there be builtin complex number type?
+    Should there be builtin bigint and arbprec type?
+    Should there be builtin hashmap, set, list, string?
+    (on syntax level)

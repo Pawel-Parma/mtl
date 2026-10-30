@@ -1,0 +1,10 @@
+// Doc comments are comments that will be used for automatic decumentation generation
+// There are two type of doc comments: ! and /
+
+//! is the ! doc comment type, it is meant to descibe the file
+
+/// is the / doc comment type, it is required to be directly before a function definition or in it
+/// it is meant to descibe the function
+fn function() void {
+    /// like here
+}

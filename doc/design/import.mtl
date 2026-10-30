@@ -1,0 +1,9 @@
+// Importing other files or modules moves them into a nameless structs, 
+// files can be imported via an absolute path from project or relative path from file importing it.
+// Modules are external dependencies or folders with foldername.mtl and are imported like
+const math1 = @import("math")
+const math2 = @import("math/math.mtl")  
+// Names for packages for install dependencies can be changed with the build script
+const math3 = @import("math_dep")
+// std is the standart library module
+const math4 = @import("std:math")

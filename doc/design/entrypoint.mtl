@@ -1,0 +1,5 @@
+// The programs entrypoint is the `main` function
+
+pub fn main() void {
+
+}

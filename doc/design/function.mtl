@@ -1,0 +1,35 @@
+// Example funtion definition
+// pub inline fn function_name(parameter1: type1, parameter2: type2) return_type { 
+//     ... 
+// }
+
+// `pub` is a modifier that decides weather a function is public
+// if ommited the function will be private
+
+// `inline` is a modifier that tells the compiler to replece the invocation of the function with the function body diretly
+
+// `fn` is a keyword that signals function declaration, 
+// it is followed by the name of the function
+// the name of the functuion is followed by `(...)`, where ... are the parameters of the function
+// parameters are of a format `parameter: type`
+
+// after `(...)` the function requires a return type, if the function doesn't return anything the return type is `void`
+
+// after the return type there is `{...}` which is a block of statements that will be executed on function call
+
+// to call a function write: `function_name(arg1, arg2)`
+
+// Return type is one of forms:
+// - `type`, which indicates that the function return a value of `type`
+// - `error!type`, which indicates that the function return an `error` or a value of `type`
+// Note that this includes `optional` types via:
+// - `?type`, which indicates that the function return an `optional` value of `type`
+// - `error!?type`, which indicates that the function return an `error` or an `optional` value of `type`
+
+
+
+
+// Explore:
+// It is possible to make varadic arguments?
+// Kwargs in style `kwargs..`
+// Defualt value?
