@@ -1,17 +1,16 @@
 const std = @import("std");
 
-const Token = @import("token.zig");
 const File = @import("file.zig");
+const Token = @import("token.zig");
 
 const Printer = @This();
+io: std.Io,
 writer: *std.Io.Writer,
-ansi: Ansi,
 
 pub const Ansi = struct {
-    writer: *std.Io.Writer,
-
     pub const Code = enum {
         Reset,
+        Dim,
         Bold,
 
         Black,
@@ -32,18 +31,14 @@ pub const Ansi = struct {
         BrightCyan,
         BrightWhite,
 
-        pub fn fromString(string: []const u8) ?Ansi.Code {
-            const info = @typeInfo(Ansi.Code).@"enum";
-            inline for (info.field_names) |field_name| {
-                if (std.mem.eql(u8, field_name, string))
-                    return @field(Ansi.Code, field_name);
-            }
-            return null;
+        pub fn fromString(name: []const u8) ?Ansi.Code {
+            return std.meta.stringToEnum(Ansi.Code, name);
         }
 
         pub fn code(self: Code) []const u8 {
             return switch (self) {
                 .Reset => "\x1b[0m",
+                .Dim => "\x1b[2m",
                 .Bold => "\x1b[1m",
 
                 .Black => "\x1b[30m",
@@ -66,18 +61,12 @@ pub const Ansi = struct {
             };
         }
     };
-
-    pub fn init(writer: *std.Io.Writer) Ansi {
-        return .{
-            .writer = writer,
-        };
-    }
 };
 
-pub fn init(writer: *std.Io.Writer) Printer {
+pub fn init(io: std.Io, writer: *std.Io.File.Writer) Printer {
     return .{
-        .writer = writer,
-        .ansi = .init(writer),
+        .io = io,
+        .writer = &writer.interface,
     };
 }
 
@@ -86,7 +75,7 @@ pub fn flush(self: *const Printer) void {
 }
 
 pub fn print(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
-    self.writer.print(fmt, args) catch @panic("Could not print failed\n");
+    self.writer.print(fmt, args) catch @panic("Print failed, you have much bigger problems rn\n");
 }
 
 pub fn dprint(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
@@ -109,11 +98,19 @@ pub fn printString(self: *const Printer, string: []const u8) void {
 }
 
 pub fn applyCode(self: *const Printer, code: Ansi.Code) void {
-    self.print("{s}", .{code.code()});
+    const istty = std.Io.File.stdout().isTty(self.io) catch unreachable;
+    if (istty) {
+        self.print("{s}", .{code.code()});
+    }
 }
 
 pub fn printColor(self: *const Printer, comptime fmt: []const u8, args: anytype) void {
-    self.print(resolveColorFmt(fmt), args);
+    const istty = std.Io.File.stdout().isTty(self.io) catch unreachable;
+    if (istty) {
+        self.print(resolveColorFmt(fmt, false), args);
+    } else {
+        self.print(resolveColorFmt(fmt, true), args);
+    }
 }
 
 pub fn printCode(self: *const Printer, code: Ansi.Code, comptime fmt: []const u8, args: anytype) void {
@@ -166,7 +163,9 @@ pub fn printSourceLine(
     self.print("\n", .{});
 }
 
-fn resolveColorFmt(comptime fmt: []const u8) []const u8 {
+fn resolveColorFmt(comptime fmt: []const u8, comptime strip: bool) []const u8 {
+    @setEvalBranchQuota(10000);
+    const espace_prefix = '\\';
     const open_char = '<';
     const close_char = '>';
     const sep_char = ':';
@@ -174,29 +173,51 @@ fn resolveColorFmt(comptime fmt: []const u8) []const u8 {
     comptime var out: []const u8 = "";
     comptime var i: usize = 0;
     while (i < fmt.len) : (i += 1) {
+        if (fmt[i] == espace_prefix and i + 1 < fmt.len and (fmt[i + 1] == open_char or fmt[i + 1] == close_char)) {
+            out = out ++ fmt[i + 1 .. i + 2];
+            i += 1;
+            continue;
+        }
+
         if (fmt[i] != open_char) {
             out = out ++ fmt[i .. i + 1];
             continue;
         }
-        const end_idx = std.mem.indexOfScalarPos(u8, fmt, i + 1, close_char) orelse {
+
+        const end_idx = a: {
+            comptime var idx = i + 1;
+            while (idx < fmt.len) : (idx += 1) {
+                if (fmt[idx] == espace_prefix and idx + 1 < fmt.len and (fmt[idx + 1] == close_char or fmt[idx + 1] == open_char)) {
+                    idx += 1;
+                    continue;
+                }
+                if (fmt[idx] == close_char) break :a idx;
+            }
             out = out ++ fmt[i .. i + 1];
             continue;
         };
+
         const inner = fmt[i + 1 .. end_idx];
         if (std.mem.indexOfScalar(u8, inner, sep_char)) |colon_idx| {
             const color_name = inner[0..colon_idx];
             const rest = inner[colon_idx + 1 ..];
             const color_opt = Ansi.Code.fromString(color_name);
             if (color_opt) |color| {
-                const inner_resolved = resolveColorFmt(rest);
-                out = out ++ color.code() ++ inner_resolved ++ Ansi.Code.Reset.code();
+                const inner_resolved = resolveColorFmt(rest, strip);
+                if (strip) {
+                    out = out ++ inner_resolved;
+                } else {
+                    out = out ++ color.code() ++ inner_resolved ++ Ansi.Code.Reset.code();
+                }
                 i = end_idx;
                 continue;
             }
         } else {
             const code_opt = Ansi.Code.fromString(inner);
             if (code_opt) |code| {
-                out = out ++ code.code();
+                if (!strip) {
+                    out = out ++ code.code();
+                }
                 i = end_idx;
                 continue;
             }

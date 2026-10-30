@@ -1,8 +1,6 @@
 pub fn main() void {
-    const a = 000001_;
-    const b = 0x00002_;
+    const a = 0x;
     _ = a;
-    _ = b;
     return;
 }
 

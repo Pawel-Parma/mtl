@@ -2,28 +2,34 @@ const std = @import("std");
 const build = @import("builtin");
 
 const Printer = @import("printer.zig");
-const Options = @import("options.zig");
 const Args = @import("args.zig");
 const File = @import("file.zig");
 const Tokenizer = @import("tokenizer.zig");
 const Parser = @import("parser.zig");
 const Semantic = @import("semantic.zig");
 
+const Code = struct {
+    const Success: u8 = 0;
+    const AllocatingArgsFailed: u8 = 1;
+    const NoFilePathProvided: u8 = 2;
+    const ReadingFileFailed: u8 = 3;
+    const TokenizationFailed: u8 = 4;
+    const ParsingFailed: u8 = 5;
+    const SemanticAnalysisFailed: u8 = 6;
+};
+
 pub fn main(init: std.process.Init) u8 {
     const io = init.io;
-
     const allocator = init.gpa;
     var arena = init.arena;
     const arena_allocator = arena.allocator();
 
-    var stdout_buffer: [2048]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
-    const stdout = &stdout_writer.interface;
-    const printer = Printer.init(stdout);
+    var buffer: [2048]u8 = undefined;
+    var stdout_file_writer = std.Io.File.stdout().writer(io, &buffer);
+    const printer = Printer.init(io, &stdout_file_writer);
     defer printer.flush();
 
-    var options = Options.default;
-    var args = Args.init(allocator, printer, init.minimal.args, &options) catch |err| {
+    var args = Args.init(allocator, printer, init.minimal.args) catch |err| {
         printer.printError("failed to allocate program arguments: {any}\n", .{err});
         return Code.AllocatingArgsFailed;
     };
@@ -37,7 +43,7 @@ pub fn main(init: std.process.Init) u8 {
         args.printUsage();
         return Code.NoFilePathProvided;
     };
-    var file = File.init(io, arena_allocator, printer, &options, file_path) catch |err| {
+    var file = File.init(io, arena_allocator, printer, &args.options, file_path) catch |err| {
         printer.printError("Failed to read file: {any}\n", .{err});
         return Code.ReadingFileFailed;
     };
@@ -62,13 +68,3 @@ pub fn main(init: std.process.Init) u8 {
 
     return Code.Success;
 }
-
-const Code = struct {
-    const Success: u8 = 0;
-    const AllocatingArgsFailed: u8 = 1;
-    const NoFilePathProvided: u8 = 2;
-    const ReadingFileFailed: u8 = 3;
-    const TokenizationFailed: u8 = 4;
-    const ParsingFailed: u8 = 5;
-    const SemanticAnalysisFailed: u8 = 6;
-};

@@ -1,21 +1,27 @@
 const std = @import("std");
 
 const Printer = @import("printer.zig");
-const Options = @import("options.zig");
 
 const Args = @This();
 allocator: std.mem.Allocator,
 printer: Printer,
-options: *Options,
+options: Options,
 args: []const [:0]const u8,
 args_map: std.StringHashMap(?[]const u8),
 
-pub fn init(allocator: std.mem.Allocator, printer: Printer, raw_args: std.process.Args, options: *Options) !Args {
+pub const Options = struct {
+    debug: bool,
+    pub const default: Options = .{
+        .debug = false,
+    };
+};
+
+pub fn init(allocator: std.mem.Allocator, printer: Printer, raw_args: std.process.Args) !Args {
     const args = try raw_args.toSlice(allocator);
     return .{
         .allocator = allocator,
         .printer = printer,
-        .options = options,
+        .options = .default,
         .args = args,
         .args_map = try createArgsMap(allocator, args),
     };
@@ -30,7 +36,7 @@ fn contains(self: *const Args, comptime string: []const u8) bool {
     return self.args_map.contains(string);
 }
 
-pub fn process(self: *const Args) bool {
+pub fn process(self: *Args) bool {
     if (self.args.len == 1 or self.contains("--help") or self.contains("-h")) {
         self.printUsage();
         return true;
@@ -55,18 +61,19 @@ pub fn getMainFilePath(self: *const Args) ?[]const u8 {
 }
 
 pub fn printUsage(self: *const Args) void {
-    self.printer.print(
-        \\Usage: mtl [options] <file_path>
-        \\Options:
-        \\  -h, --help          Show help message
-        \\  -v, --version       Print version
-        \\  -d, --debug         Enable debug mode
+    self.printer.printColor(
+        \\<Yellow:Usage:> <Green:mtl> <Dim:[options]> <Cyan:\<file_path\>>
+        \\
+        \\<Yellow:Options:>
+        \\  <Cyan:-h>, <Cyan:--help>         Show help message
+        \\  <Cyan:-v>, <Cyan:--version>      Print version
+        \\  <Cyan:-d>, <Cyan:--debug>        Enable debug mode
         \\
     , .{});
 }
 
 fn printVersion(self: *const Args) void {
-    self.printer.print("0.0.0\n", .{});
+    self.printer.printColor("<Blue:0.0.0>\n", .{});
 }
 
 fn createArgsMap(allocator: std.mem.Allocator, args: []const [:0]const u8) !std.StringHashMap(?[]const u8) {

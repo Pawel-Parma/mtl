@@ -39,7 +39,7 @@ pub fn nextToken(self: *Tokenizer) Token {
         '\n' => self.newLineToken(),
         '/' => self.slashToken(),
         '0'...'9' => self.numberLiteralToken(),
-        else => self.unsupportedByte(),
+        else => self.invalidByte(),
     };
 }
 
@@ -71,6 +71,36 @@ inline fn isNextAtEnd(self: *Tokenizer) bool {
 inline fn isIdentifierChar(char: u8) bool {
     return switch (char) {
         'a'...'z', 'A'...'Z', '0'...'9', '_' => true,
+        else => false,
+    };
+}
+
+inline fn isBinaryDigitChar(char: u8) bool {
+    return switch (char) {
+        '0'...'1' => true,
+        else => false,
+    };
+}
+
+inline fn isOctalDigitChar(char: u8) bool {
+    return switch (char) {
+        '0'...'7' => true,
+        else => false,
+    };
+}
+
+inline fn isDecimalDigitChar(char: u8) bool {
+    return switch (char) {
+        '0'...'9' => true,
+        else => false,
+    };
+}
+
+inline fn isHexadecimalDigitChar(char: u8) bool {
+    return switch (char) {
+        '0'...'9' => true,
+        'a'...'f' => true,
+        'A'...'F' => true,
         else => false,
     };
 }
@@ -150,37 +180,20 @@ fn numberLiteralToken(self: *Tokenizer) Token {
     const start = self.advanceGetIndex();
 
     if (previous == '0' and !self.isAtEnd()) {
-        switch (self.peek()) {
-            'b', 'B' => {
-                if (self.isNextAtEnd() or (self.peekNext() < '0' or self.peekNext() > '1')) {
-                    return .{ .kind = .IntDecimalLiteral, .start = start, .end = self.file.position };
-                }
-                self.advanceToEndOfNumber(.Bin);
-                return .{ .kind = .IntBinaryLiteral, .start = start, .end = self.file.position };
-            },
-            'o', 'O' => {
-                if (self.isNextAtEnd() or (self.peekNext() < '0' or self.peekNext() > '8')) {
-                    return .{ .kind = .IntDecimalLiteral, .start = start, .end = self.file.position };
-                }
-                self.advanceToEndOfNumber(.Oct);
-                return .{ .kind = .IntOctalLiteral, .start = start, .end = self.file.position };
-            },
-            'x', 'X' => {
-                const next = self.peekNext();
-                if (self.isNextAtEnd() or !((next >= '0' and next <= '9') or (next >= 'a' and next <= 'f') or (next >= 'A' and next <= 'F'))) {
-                    return .{ .kind = .IntDecimalLiteral, .start = start, .end = self.file.position };
-                }
-                self.advanceToEndOfNumber(.Hex);
-                return .{ .kind = .IntHexadecimalLiteral, .start = start, .end = self.file.position };
-            },
-            else => {},
+        const kind_opt: ?Token.Kind = switch (self.peek()) {
+            'b', 'B' => self.advanceToEndOfNumber(.IntBinaryLiteral),
+            'o', 'O' => self.advanceToEndOfNumber(.IntOctalLiteral),
+            'x', 'X' => self.advanceToEndOfNumber(.IntHexadecimalLiteral),
+            else => null,
+        };
+        if (kind_opt) |kind| {
+            return .{ .kind = kind, .start = start, .end = self.file.position };
         }
     }
 
     var has_dot = false;
     var has_e = false;
     var has_minus = false;
-    var is_float = false;
     while (!self.isAtEnd()) {
         const char = self.peek();
         switch (char) {
@@ -189,28 +202,23 @@ fn numberLiteralToken(self: *Tokenizer) Token {
                 if (self.isNextAtEnd()) break;
                 const next = self.peekNext();
                 if (previous == '_' or next == '_' or previous == 'e' or previous == 'E' or previous == '-' or next == '-') break;
-                if (next < '0' or next > '9') break;
+                if (!isDecimalDigitChar(next)) break;
             },
             '.' => {
                 if (has_dot or has_e or self.isNextAtEnd()) break;
-                const next = self.peekNext();
-                if (next < '0' or next > '9') break;
+                if (!isDecimalDigitChar(self.peekNext())) break;
                 has_dot = true;
-                is_float = true;
             },
             'e', 'E' => {
-                if (has_e) break;
-                if (self.isNextAtEnd()) break;
+                if (has_e or self.isNextAtEnd()) break;
                 const next = self.peekNext();
-                if ((next < '0' or next > '9') and next != '-') break;
+                if (!isDecimalDigitChar(next) and next != '-') break;
                 has_e = true;
             },
             '-' => {
                 if (has_minus or !has_e or self.isNextAtEnd()) break;
-                const next = self.peekNext();
-                if (next < '0' or next > '9') break;
+                if (!isDecimalDigitChar(self.peekNext())) break;
                 has_minus = true;
-                is_float = true;
             },
             else => break,
         }
@@ -218,13 +226,29 @@ fn numberLiteralToken(self: *Tokenizer) Token {
         self.advance();
     }
     const kind: Token.Kind = switch (has_e) {
-        false => if (is_float) .FloatLiteral else .IntDecimalLiteral,
-        true => if (is_float) .FloatScientificLiteral else .IntScientificLiteral,
+        false => if (has_dot) .FloatLiteral else .IntDecimalLiteral,
+        true => if (has_minus or has_dot) .FloatScientificLiteral else .IntScientificLiteral,
     };
+
     return .{ .kind = kind, .start = start, .end = self.file.position };
 }
 
-fn advanceToEndOfNumber(self: *Tokenizer, comptime kind: enum { Bin, Oct, Hex }) void {
+fn isValidDigit(char: u8, comptime kind: Token.Kind) bool {
+    comptime std.debug.assert(kind == .IntBinaryLiteral or kind == .IntOctalLiteral or kind == .IntHexadecimalLiteral);
+    return switch (kind) {
+        .IntBinaryLiteral => isBinaryDigitChar(char),
+        .IntOctalLiteral => isOctalDigitChar(char),
+        .IntHexadecimalLiteral => isHexadecimalDigitChar(char),
+        else => unreachable,
+    };
+}
+
+fn advanceToEndOfNumber(self: *Tokenizer, comptime kind: Token.Kind) Token.Kind {
+    comptime std.debug.assert(kind == .IntBinaryLiteral or kind == .IntOctalLiteral or kind == .IntHexadecimalLiteral);
+    if (self.isNextAtEnd() or !isValidDigit(self.peekNext(), kind)) {
+        return .IntDecimalLiteral;
+    }
+
     var previous = self.peek();
     self.advance();
     while (!self.isAtEnd()) {
@@ -232,38 +256,29 @@ fn advanceToEndOfNumber(self: *Tokenizer, comptime kind: enum { Bin, Oct, Hex })
         switch (char) {
             '0'...'1' => {},
             '2'...'7' => switch (kind) {
-                .Oct, .Hex => {},
+                .IntOctalLiteral, .IntHexadecimalLiteral => {},
                 else => break,
             },
-            '9' => switch (kind) { // TODO: comptime switch crashes compiler
-                .Hex => {},
-                else => break,
-            },
-            'a'...'f', 'A'...'F' => switch (kind) {
-                .Hex => {},
+            '9', 'a'...'f', 'A'...'F' => switch (kind) {
+                .IntHexadecimalLiteral => {},
                 else => break,
             },
             '_' => {
                 if (self.isNextAtEnd()) break;
                 const next = self.peekNext();
                 if (previous == '_' or next == '_') break;
-                const is_digit = switch (kind) {
-                    .Bin => '0' <= next or next <= '1',
-                    .Oct => '0' <= next and next <= '8',
-                    .Hex => ('0' <= next and next <= '9') or
-                        ('a' <= next and next <= 'f') or
-                        ('A' <= next and next <= 'F'),
-                };
-                if (!is_digit) break;
+                if (!isValidDigit(next, kind)) break;
             },
             else => break,
         }
         previous = char;
         self.advance();
     }
+
+    return kind;
 }
 
-fn unsupportedByte(self: *Tokenizer) Token {
+fn invalidByte(self: *Tokenizer) Token {
     const start = self.file.position;
     self.advance();
     return .{ .kind = .InvalidByte, .start = start, .end = self.file.position };

@@ -36,16 +36,15 @@ pub const Kind = enum {
     Call,
     IgnoreResult,
 
-    IntLiteral,
     IntBinaryLiteral,
     IntOctalLiteral,
+    IntDecimalLiteral,
     IntHexadecimalLiteral,
     IntScientificLiteral,
     FloatLiteral,
     FloatScientificLiteral,
+    BoolLiteral,
     Identifier,
-    TrueLiteral,
-    FalseLiteral,
 
     ExpressionStatement,
     Mutation,

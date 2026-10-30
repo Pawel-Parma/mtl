@@ -351,18 +351,17 @@ fn parsePrefix(self: *Parser) Error![]Node {
     const token = self.peek();
     const token_index = self.advanceGetIndex();
     switch (token.kind) {
-        .Identifier, .IntDecimalLiteral, .IntBinaryLiteral, .IntOctalLiteral, .IntHexadecimalLiteral, .IntScientificLiteral, .FloatLiteral, .FloatScientificLiteral, .TrueLiteral, .FalseLiteral => {
+        .Identifier, .IntDecimalLiteral, .IntBinaryLiteral, .IntOctalLiteral, .IntHexadecimalLiteral, .IntScientificLiteral, .FloatLiteral, .FloatScientificLiteral, .BoolLiteral => {
             const kind: Node.Kind = switch (token.kind) {
                 .Identifier => .Identifier,
-                .IntDecimalLiteral => .IntLiteral,
+                .IntDecimalLiteral => .IntDecimalLiteral,
                 .IntBinaryLiteral => .IntBinaryLiteral,
                 .IntOctalLiteral => .IntOctalLiteral,
                 .IntHexadecimalLiteral => .IntHexadecimalLiteral,
                 .IntScientificLiteral => .IntScientificLiteral,
                 .FloatLiteral => .FloatLiteral,
                 .FloatScientificLiteral => .FloatScientificLiteral,
-                .TrueLiteral => .TrueLiteral,
-                .FalseLiteral => .FalseLiteral,
+                .BoolLiteral => .BoolLiteral,
                 else => unreachable,
             };
             return self.nodesToHeapSlice(.{makeLeaf(kind, token_index)});

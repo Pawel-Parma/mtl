@@ -29,8 +29,7 @@ pub const Kind = enum {
     IntScientificLiteral,
     FloatLiteral,
     FloatScientificLiteral,
-    TrueLiteral,
-    FalseLiteral,
+    BoolLiteral,
 
     Identifier,
 
@@ -88,7 +87,7 @@ pub const Precedence = enum {
     Suffix,
 
     pub inline fn lessThan(self: Precedence, right: Precedence) bool {
-        return @intFromEnum(self) < @intFromEnum(right);
+        return @backingInt(self) < @backingInt(right);
     }
 };
 
@@ -126,8 +125,8 @@ pub const keywords: std.StaticStringMap(Kind) = .initComptime([_]struct { []cons
     .{ "pub", .Pub },
     .{ "const", .Const },
     .{ "var", .Var },
-    .{ "true", .TrueLiteral },
-    .{ "false", .FalseLiteral },
+    .{ "true", .BoolLiteral },
+    .{ "false", .BoolLiteral },
     .{ "and", .And },
     .{ "or", .Or },
     .{ "not", .Not },

@@ -1,6 +1,5 @@
 const std = @import("std");
 
-const options = @import("options.zig");
 const Printer = @import("printer.zig");
 const File = @import("file.zig");
 const Token = @import("token.zig");
@@ -237,9 +236,9 @@ fn declarationNode(self: *Semantic, comptime is_public: bool) !void {
 fn inferType(self: *Semantic, node_index: u32) Error!Declaration.Type {
     const node = self.get(node_index);
     switch (node.kind) {
-        .IntLiteral, .IntBinaryLiteral, .IntOctalLiteral, .IntHexadecimalLiteral, .IntScientificLiteral => return .ComptimeInt,
+        .IntDecimalLiteral, .IntBinaryLiteral, .IntOctalLiteral, .IntHexadecimalLiteral, .IntScientificLiteral => return .ComptimeInt,
         .FloatLiteral, .FloatScientificLiteral => return .ComptimeFloat,
-        .TrueLiteral, .FalseLiteral => return .Bool,
+        .BoolLiteral => return .Bool,
         .UnaryMinus, .UnaryNot => {
             const child_type = try self.inferType(node_index + 1);
             if (!child_type.allowsOperation(node.kind)) {

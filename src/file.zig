@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const Printer = @import("printer.zig");
-const Options = @import("options.zig");
+const Args = @import("args.zig");
 const Token = @import("token.zig");
 const Node = @import("node.zig");
 const Declaration = @import("declaration.zig");
@@ -9,7 +9,7 @@ const Declaration = @import("declaration.zig");
 const File = @This();
 allocator: std.mem.Allocator,
 printer: Printer,
-options: *Options,
+options: *Args.Options,
 path: []const u8,
 buffer: []const u8,
 tokens: std.ArrayList(Token) = .empty,
@@ -24,7 +24,7 @@ global_scope: *std.StringHashMap(Declaration),
 all_scopes: std.ArrayList(*std.StringHashMap(Declaration)),
 scopes: std.ArrayList(*std.StringHashMap(Declaration)),
 
-pub fn init(io: std.Io, allocator: std.mem.Allocator, printer: Printer, options: *Options, file_path: []const u8) !File {
+pub fn init(io: std.Io, allocator: std.mem.Allocator, printer: Printer, options: *Args.Options, file_path: []const u8) !File {
     return .{
         .allocator = allocator,
         .printer = printer,

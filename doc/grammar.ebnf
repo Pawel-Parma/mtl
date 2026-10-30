@@ -1,152 +1,15 @@
-digit_b16 = '0' - '9'
-          | 'a' - 'f'
-          | 'A' - 'F' ;
-digit_b10 = '0' - '9' ;
-digit_b8  = '0' - '7' ;
-digit_b2  = '0' - '1' ;
+(* #[allow(unused)] *)
+FILE = { TOP_LEVEL_STATEMENT } ;
 
-integer_b16 = ( '0x'
-              | '0X' )
-            , ( digit_b16
-              , { digit_b16 } )
-            , { '_'
-              , ( digit_b16
-                , { digit_b16 } ) } ;
+TOP_LEVEL_STATEMENT = VAR_DECLARATION
+                    | CONST_DECLARATION
+                    | FUNCTION_DECLARATION
+                    | PUBLIC_DECLARATION ;
 
-integer_b10_normal = ( digit_b10
-                     , { digit_b10 } )
-                   , { '_'
-                     , ( digit_b10
-                       , { digit_b10 } ) } ;
-
-integer_b10_exponent = integer_b10_normal
-                     , ( 'e'
-                       | 'E' )
-                     , integer_b10_normal ;
-
-integer_b10 = integer_b10_normal
-            | integer_b10_exponent ;
-
-integer_b8 = ( '0o'
-             | '0O' )
-           , ( digit_b8
-             , { digit_b8 } )
-           , { '_'
-             , ( digit_b8
-               , { digit_b8 } ) } ;
-
-integer_b2 = ( '0b'
-             | '0B' )
-           , ( digit_b2
-             , { digit_b2 } )
-           , { '_'
-             , ( digit_b2
-               , { digit_b2 } ) } ;
-
-INTEGER_LITERAL = integer_b16
-                | integer_b10
-                | integer_b8
-                | integer_b2 ;
-
-float_normal = integer_b10_normal
-             , '.'
-             , integer_b10_normal ;
-
-float_exponent = integer_b10_normal
-               , '.'
-               , integer_b10_normal
-               , [ '-' ]
-               , ( 'e'
-                 | 'E' )
-               , integer_b10_normal ;
-
-FLOAT_LITERAL = float_normal
-              | float_exponent ;
-
-BOOL_LITERAL = 'true'
-             | 'false' ;
-
-identifier_char = 'a' - 'z'
-                | 'A' - 'Z'
-                | '0' - '9'
-                | '_' ;
-
-IDENTIFIER = ( 'a' - 'z'
-             | 'A' - 'Z' )
-           , { identifier_char }
-           | '_'
-           , identifier_char
-           , { identifier_char } ;
-
-BINARY_OPERATOR = '+'
-                | '-'
-                | '*'
-                | '/'
-                | '%'
-                | '^'
-                | 'and'
-                | 'or'
-                | '=='
-                | '!='
-                | '>'
-                | '>='
-                | '<'
-                | '<=' ;
-
-UNARY_OPERATOR = '-'
-               | 'not' ;
-
-EXPRESSION = ( INTEGER_LITERAL
-             | FLOAT_LITERAL
-             | BOOL_LITERAL
-             | IDENTIFIER
-             | FUNCTION_CALL
-             | BUILTIN_CALL )
-           | ( '('
-             , EXPRESSION
-             , ')' )
-           | ( EXPRESSION
-             , BINARY_OPERATOR
-             , EXPRESSION )
-           | ( UNARY_OPERATOR
-             , EXPRESSION ) ;
-
-TYPE_IDENTIFIER = 'i8'
-                | 'i16'
-                | 'i32'
-                | 'i64'
-                | 'i128'
-                | 'u8'
-                | 'u16'
-                | 'u32'
-                | 'u64'
-                | 'u128'
-                | 'f16'
-                | 'f32'
-                | 'f64'
-                | 'f80'
-                | 'f128'
-                | 'comptime_int'
-                | 'comptime_float'
-                | 'bool'
-                | 'void'
-                | 'type' ;
-
-TYPE_EXPRESSION = TYPE_IDENTIFIER
-                | IDENTIFIER
-                | BUILTIN_CALL ;
-
-END_OF_STATEMENT = ';' ;
-
-STATEMENT = BLOCK
-          | CONST_DECLARATION
-          | VAR_DECLARATION
-          | RETURN
-          | EXPRESSION_STATEMENT
-          | UNDERSCORE_STATEMENT ;
-
-TOP_LEVEL_STATEMENT = PUBLIC_DECLARATION
-                    | PRIVATE_DECLARATION ;
+PUBLIC_DECLARATION = 'pub'
+                   , ( VAR_DECLARATION
+                     | CONST_DECLARATION
+                     | FUNCTION_DECLARATION ) ;
 
 VAR_DECLARATION = 'var'
                 , IDENTIFIER
@@ -172,44 +35,26 @@ FUNCTION_DECLARATION = 'fn'
                        , IDENTIFIER
                        , [ ',' ] }
                      , ')'
-                     , TYPE_EXPRESSION
+                     , IDENTIFIER
                      , BLOCK ;
 
-PUBLIC_DECLARATION = 'pub'
-                   , ( FUNCTION_DECLARATION
-                     | VAR_DECLARATION
-                     | CONST_DECLARATION ) ;
-
-PRIVATE_DECLARATION = FUNCTION_DECLARATION
-                    | VAR_DECLARATION
-                    | CONST_DECLARATION ;
+STATEMENT = BLOCK
+          | CONST_DECLARATION
+          | VAR_DECLARATION
+          | RETURN
+          | EXPRESSION_STATEMENT
+          | UNDERSCORE_STATEMENT ;
 
 BLOCK = '{'
       , { STATEMENT }
       , '}' ;
 
 RETURN = 'return'
-       , { EXPRESSION }
+       , [ EXPRESSION ]
        , END_OF_STATEMENT ;
 
-FUNCTION_CALL = IDENTIFIER
-              , '('
-              , { EXPRESSION
-                , [ ',' ] }
-              , ')' ;
-
-BUILTIN_CALL = '@'
-             , FUNCTION_CALL ;
-
-MODIFY_OPERATOR = '='
-                | '+='
-                | '-='
-                | '*='
-                | '/='
-                | '%=' ;
-
 EXPRESSION_STATEMENT = ( ( IDENTIFIER
-                         , MODIFY_OPERATOR
+                         , modify_operator
                          , EXPRESSION )
                        | FUNCTION_CALL
                        | BUILTIN_CALL )
@@ -220,5 +65,158 @@ UNDERSCORE_STATEMENT = '_'
                      , EXPRESSION
                      , END_OF_STATEMENT ;
 
-(* #[allow(unused)] *)
-FILE = { TOP_LEVEL_STATEMENT } ;
+END_OF_STATEMENT = ';' ;
+
+TYPE_EXPRESSION = TYPE_IDENTIFIER
+                | IDENTIFIER
+                | BUILTIN_CALL ;
+
+EXPRESSION = ( INTEGER_LITERAL
+             | FLOAT_LITERAL
+             | BOOL_LITERAL
+             | IDENTIFIER
+             | FUNCTION_CALL
+             | BUILTIN_CALL )
+           | ( '('
+             , EXPRESSION
+             , ')' )
+           | ( EXPRESSION
+             , binary_operator
+             , EXPRESSION )
+           | ( unary_operator
+             , EXPRESSION ) ;
+
+FUNCTION_CALL = IDENTIFIER
+              , '('
+              , { EXPRESSION
+                , [ ',' ] }
+              , ')' ;
+
+BUILTIN_CALL = '@'
+             , FUNCTION_CALL ;
+
+modify_operator = '='
+                | '+='
+                | '-='
+                | '*='
+                | '/='
+                | '%=' ;
+
+binary_operator = '+'
+                | '-'
+                | '*'
+                | '/'
+                | '%'
+                | '^'
+                | 'and'
+                | 'or'
+                | '=='
+                | '!='
+                | '>'
+                | '>='
+                | '<'
+                | '<=' ;
+
+unary_operator = '-'
+               | 'not' ;
+
+TYPE_IDENTIFIER = 'i8'
+                | 'i16'
+                | 'i32'
+                | 'i64'
+                | 'i128'
+                | 'u8'
+                | 'u16'
+                | 'u32'
+                | 'u64'
+                | 'u128'
+                | 'f16'
+                | 'f32'
+                | 'f64'
+                | 'f80'
+                | 'f128'
+                | 'comptime_int'
+                | 'comptime_float'
+                | 'bool'
+                | 'void'
+                | 'type' ;
+
+IDENTIFIER = ( 'a' - 'z'
+             | 'A' - 'Z' )
+           , { identifier_char }
+           | '_'
+           , identifier_char
+           , { identifier_char } ;
+
+identifier_char = 'a' - 'z'
+                | 'A' - 'Z'
+                | '0' - '9'
+                | '_' ;
+
+BOOL_LITERAL = 'true'
+             | 'false' ;
+
+INTEGER_LITERAL = integer_b2
+                | integer_b8
+                | integer_b10
+                | integer_b16 ;
+
+integer_b2 = ( '0b'
+             | '0B' )
+           , ( digit_b2
+             , { digit_b2 } )
+           , { '_'
+             , ( digit_b2
+               , { digit_b2 } ) } ;
+
+integer_b8 = ( '0o'
+             | '0O' )
+           , ( digit_b8
+             , { digit_b8 } )
+           , { '_'
+             , ( digit_b8
+               , { digit_b8 } ) } ;
+
+integer_b10 = integer_b10_normal
+            | integer_b10_exponent ;
+
+integer_b10_normal = ( digit_b10
+                     , { digit_b10 } )
+                   , { '_'
+                     , ( digit_b10
+                       , { digit_b10 } ) } ;
+
+integer_b10_exponent = integer_b10_normal
+                     , ( 'e'
+                       | 'E' )
+                     , integer_b10_normal ;
+
+integer_b16 = ( '0x'
+              | '0X' )
+            , ( digit_b16
+              , { digit_b16 } )
+            , { '_'
+              , ( digit_b16
+                , { digit_b16 } ) } ;
+
+digit_b2  = '0' - '1' ;
+digit_b8  = '0' - '7' ;
+digit_b10 = '0' - '9' ;
+digit_b16 = '0' - '9'
+          | 'a' - 'f'
+          | 'A' - 'F' ;
+
+FLOAT_LITERAL = float_normal
+              | float_exponent ;
+
+float_normal = integer_b10_normal
+             , '.'
+             , integer_b10_normal ;
+
+float_exponent = integer_b10_normal
+               , '.'
+               , integer_b10_normal
+               , [ '-' ]
+               , ( 'e'
+                 | 'E' )
+               , integer_b10_normal ;

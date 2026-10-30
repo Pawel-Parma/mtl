@@ -1,4 +1,36 @@
 Todo:
+    make global scope lazily analyzed
+    // TODO: global const cannot depend on var
+    // const G0 = G1 + 1;
+    // var   G1 := 5;                       
+    // TODO: add cycle analysis, cycle cross type boundry or type only boundry or expre boundry
+    // const i = j + 1 const j = i + 1;  
+    // // ------- 3-way indirect cycle with expressions -------
+    // const I0 = I1 + 1;
+    // const I1 = I2 + 1;
+    // const I2 = I0 + 1;                   // ERROR: cycle I0→I1→I2→I0
+    // const A = B;
+    // const B = 1 + C;
+    // const C: A = 2;
+    // // ------- Self-referential cycle appearing only after resolution -------
+    // const Z0 = Z1;
+    // const Z1: Z2 = 123;
+    // const Z2 = Z0;                       // ERROR: cycle (Z0 → Z1 → Z2 → Z0)
+    add builtin functions (print)
+    // TODO: make types expressions so @typeof is allowed 
+    add tests
+    make diff scopes to allow redeclare
+    add function and function_generic to all when completed
+    check returs type function stuff 
+    support recvursion
+    add basic syntax
+    compile and run
+    add check if the number can fit inside the type
+    refactor file.zig
+    multifile
+
+
+Todo:
     Basic syntax(if for etc..., simple for each, range)
     Special syntax for nulls
     Secial syntax for errors
