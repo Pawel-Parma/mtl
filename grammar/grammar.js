@@ -32,7 +32,7 @@ export default grammar({
             'var',
             $.identifier,
             choice(
-                seq(':', $.type_expression),
+                seq(':', $.expression),
                 ':='
             ),
             $.expression,
@@ -42,7 +42,7 @@ export default grammar({
         const_declaration: $ => seq(
             'const',
             $.identifier,
-            optional(seq(':', $.type_expression)),
+            optional(seq(':', $.expression)),
             '=',
             $.expression,
             $.end_of_statement
@@ -55,12 +55,12 @@ export default grammar({
             repeat(seq(
                 $.identifier,
                 ':',
-                $.identifier,
+                $.expression,
                 // TODO: make , optional only at the end 
                 optional(',')
             )),
             ')',
-            $.identifier,
+            $.expression,
             $.block
         ),
 
@@ -92,6 +92,7 @@ export default grammar({
             $.end_of_statement
         ),
 
+
         expression_statement: $ => seq(
             choice(
                 seq($.identifier, $.modify_operator, $.expression),
@@ -104,12 +105,6 @@ export default grammar({
         end_of_statement: _ => ';',
         comment: _ => /\/\/[^\n]*/,
 
-        type_expression: $ => choice(
-            $.type_identifier,
-            $.identifier,
-            $.builtin_call
-        ),
-
         expression: $ => choice(
             $.prefix_expression,
             $.infix_or_suffix_expression,
@@ -120,6 +115,7 @@ export default grammar({
             $.float_literal,
             $.bool_literal,
             $.identifier,
+            $.type_identifier,
             $.unary_expression,
             $.grouping_expression,
             $.builtin_call,
@@ -129,7 +125,6 @@ export default grammar({
             $.unary_operator,
             $.expression,
         )),
-
 
         grouping_expression: $ => prec(7, seq('(', $.expression, ')')),
 

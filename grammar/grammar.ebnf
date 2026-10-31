@@ -14,7 +14,7 @@ PUBLIC_DECLARATION = 'pub'
 VAR_DECLARATION = 'var'
                 , IDENTIFIER
                 , ( [ ':'
-                    , TYPE_EXPRESSION ]
+                    , EXPRESSION ]
                   | ':=' )
                 , EXPRESSION
                 , END_OF_STATEMENT ;
@@ -22,7 +22,7 @@ VAR_DECLARATION = 'var'
 CONST_DECLARATION = 'const'
                   , IDENTIFIER
                   , [ ':'
-                    , TYPE_EXPRESSION ]
+                    , EXPRESSION ]
                   , '='
                   , EXPRESSION
                   , END_OF_STATEMENT ;
@@ -32,10 +32,10 @@ FUNCTION_DECLARATION = 'fn'
                      , '('
                      , { IDENTIFIER
                        , ':'
-                       , IDENTIFIER (* TODO: make , optional only at the end *)
+                       , EXPRESSION (* TODO: make , optional only at the end *)
                        , [ ',' ] }
                      , ')'
-                     , IDENTIFIER
+                     , EXPRESSION
                      , BLOCK ;
 
 STATEMENT = VAR_DECLARATION
@@ -72,10 +72,6 @@ COMMENT = '//'
 
 comment_char = ? any character except newline ? ;
 
-TYPE_EXPRESSION = TYPE_IDENTIFIER
-                | IDENTIFIER
-                | BUILTIN_CALL ;
-
 (* TODO: add precedence, meaby convert to peg *)
 EXPRESSION = prefix_expression
            | infix_or_suffix_expression ;
@@ -84,6 +80,7 @@ prefix_expression = INTEGER_LITERAL
                   | FLOAT_LITERAL
                   | BOOL_LITERAL
                   | IDENTIFIER
+                  | TYPE_IDENTIFIER
                   | unary_expression
                   | grouping_expression
                   | BUILTIN_CALL ;

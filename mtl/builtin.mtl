@@ -3,6 +3,7 @@ pub fn main() void {
     @print(a);
     const b = @typeof(a);
     const c: b = 12;
+    const c: @typeof(b) = 12;
     // const d = u32;
     // const e = @typeof(d) ;
     // const f: e = d; 

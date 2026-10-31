@@ -182,6 +182,7 @@ fn parseDeclaration(self: *Parser) !void {
         else => unreachable,
     };
     if (token.kind == .Colon) {
+        // TODO: remove TypeExpression in favor of Expression
         try self.pushNode(.{ .kind = .TypeExpression, .children = 1 });
         const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
         try self.pushNodes(expression);
@@ -207,6 +208,7 @@ fn parseFunction(self: *Parser) !void {
     try self.parseParameters();
     try self.expect(.ParenRight);
 
+    // TODO: change to expression
     const type_index = self.index();
     try self.expect(.Identifier);
     try self.pushNode(makeLeaf(.Identifier, type_index));
@@ -228,6 +230,7 @@ fn parseParameters(self: *Parser) !void {
         try self.expect(.Colon);
 
         const type_index = self.index();
+        // TODO: change to expression
         try self.expect(.Identifier);
         try self.pushNode(makeLeaf(.Identifier, type_index));
 
