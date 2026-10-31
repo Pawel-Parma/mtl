@@ -1,7 +1,13 @@
 pub fn main() void {
-    const a = 0x;
+    {
+    }
+    const a = 0x1;
     _ = a;
     return;
+}
+
+pub fn f(a: u32 b: u32) void {
+
 }
 
 

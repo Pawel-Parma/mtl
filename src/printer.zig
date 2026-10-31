@@ -143,6 +143,7 @@ pub fn printSourceLine(
     const line_info = file.lineInfo(token);
     const column = token.start - line_info.start;
     const line = File.getLine(file.buffer, line_info.start, token.start, @intCast(file.buffer.len));
+    self.applyCode(.Yellow);
     self.applyCode(.Bold);
     self.print("{s}:{d}:{d} ", .{ file.path, line_info.number, column });
     self.applyCode(.Red);

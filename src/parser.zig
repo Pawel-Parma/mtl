@@ -51,18 +51,18 @@ fn parseStatement(self: *Parser) Error!void {
         .Var, .Const => try self.parseDeclaration(),
         .CurlyLeft => try self.parseBlock(),
         .Return => try self.parseReturn(),
-        .Identifier, .At => try self.parseExpressionStatement(),
         .Underscore => try self.parseUnderscore(),
+        .Identifier, .At => try self.parseExpressionStatement(),
         else => self.reportError("Unexpected token {any}\n", .{token}),
     };
 }
 
-inline fn advance(self: *Parser) void {
-    self.file.current += 1;
-}
-
 inline fn index(self: *Parser) u32 {
     return self.file.current;
+}
+
+inline fn advance(self: *Parser) void {
+    self.file.current += 1;
 }
 
 inline fn advanceGetIndex(self: *Parser) u32 {
@@ -78,26 +78,24 @@ inline fn peekNext(self: *Parser) Token {
     return self.file.tokens.items[self.file.current + 1];
 }
 
-inline fn isIndexAtEnd(self: *Parser, idx: u32) bool {
-    return idx >= self.file.tokens.items.len;
-}
-
 inline fn isAtEnd(self: *Parser) bool {
-    return self.isIndexAtEnd(self.file.current);
+    return self.file.current >= self.file.tokens.items.len;
 }
 
-inline fn checkEofAtIndex(self: *Parser, idx: u32) !void {
-    if (self.isIndexAtEnd(idx)) {
+inline fn isNextAtEnd(self: *Parser) bool {
+    return self.file.current + 1 >= self.file.tokens.items.len;
+}
+
+inline fn checkEof(self: *Parser) !void {
+    if (self.isAtEnd()) {
         return self.reportError("Unexpected end of file\n", .{});
     }
 }
 
-inline fn checkEof(self: *Parser) !void {
-    try self.checkEofAtIndex(self.file.current);
-}
-
 inline fn checkEofNext(self: *Parser) !void {
-    try self.checkEofAtIndex(self.file.current + 1);
+    if (self.isNextAtEnd()) {
+        return self.reportError("Unexpected end of file\n", .{});
+    }
 }
 
 fn expectOneOf(self: *Parser, comptime kinds: anytype) !Token {
@@ -109,7 +107,12 @@ fn expectOneOf(self: *Parser, comptime kinds: anytype) !Token {
             return token;
         }
     }
-    return self.reportError("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
+
+    if (kinds.len == 1) {
+        return self.reportError("Expected token kind to be {any}, found {any}\n", .{ kinds[0], token.kind });
+    } else {
+        return self.reportError("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
+    }
 }
 
 inline fn expect(self: *Parser, comptime kind: Token.Kind) !void {
@@ -117,16 +120,16 @@ inline fn expect(self: *Parser, comptime kind: Token.Kind) !void {
 }
 
 fn synchronize(self: *Parser) void {
-    while (!self.isAtEnd() and !(self.peek().kind == .SemiColon or self.peek().kind == .CurlyRight)) {
+    while (!self.isAtEnd() and self.peek().kind != .SemiColon and self.peek().kind != .CurlyRight) {
         self.advance();
     }
-    if (!self.isAtEnd() and (self.peek().kind == .SemiColon or self.peek().kind == .CurlyRight)) {
+    if (!self.isAtEnd()) {
         self.advance();
     }
 }
 
 inline fn makeLeaf(kind: Node.Kind, token_index: ?u32) Node {
-    return Node{ .kind = kind, .children = 0, .token_index = token_index };
+    return .{ .kind = kind, .children = 0, .token_index = token_index };
 }
 
 inline fn pushNode(self: *Parser, node: Node) !void {
@@ -143,12 +146,15 @@ inline fn lastPushedIndex(self: *Parser) u32 {
 
 fn nodesToHeapSlice(self: *Parser, nodes: anytype) ![]Node {
     var slice: std.ArrayList(Node) = .empty;
-    inline for (nodes) |node| {
-        switch (@TypeOf(node)) {
-            Node => try slice.append(self.allocator, node),
-            []Node => try slice.appendSlice(self.allocator, node),
-            else => @compileError("unexpected type"),
-        }
+    switch (@TypeOf(nodes)) {
+        Node => try slice.append(self.allocator, nodes),
+        else => inline for (nodes) |node| {
+            switch (@TypeOf(node)) {
+                Node => try slice.append(self.allocator, node),
+                []Node => try slice.appendSlice(self.allocator, node),
+                else => @compileError("unexpected type"),
+            }
+        },
     }
     return slice.items;
 }
@@ -170,8 +176,6 @@ fn parseDeclaration(self: *Parser) !void {
     try self.expect(.Identifier);
     try self.pushNode(makeLeaf(.Identifier, name_identifier_index));
 
-    // const a = 1;
-    // const a: u32 = 1;
     const token = switch (declaration.kind) {
         .Const => try self.expectOneOf(.{ .Colon, .Equals }),
         .Var => try self.expectOneOf(.{ .Colon, .ColonEquals }),
@@ -227,30 +231,13 @@ fn parseParameters(self: *Parser) !void {
         try self.expect(.Identifier);
         try self.pushNode(makeLeaf(.Identifier, type_index));
 
+        // TODO: enforce all comas except the last one
         if (self.peek().kind == .Comma) {
             self.advance();
         }
     }
 
     self.file.ast.items[parameters_index].children = children;
-}
-
-fn parseBlock(self: *Parser) Error!void {
-    try self.expect(.CurlyLeft);
-    try self.pushNode(.{ .kind = .Scope, .children = 0 });
-    const scope_index = self.lastPushedIndex();
-
-    var children: u32 = 0;
-    while (!self.isAtEnd() and self.peek().kind != .CurlyRight) {
-        self.parseStatement() catch {
-            self.synchronize();
-            continue;
-        };
-        children += 1;
-    }
-    try self.expect(.CurlyRight);
-
-    self.file.ast.items[scope_index].children = children;
 }
 
 fn parsePub(self: *Parser) !void {
@@ -265,6 +252,23 @@ fn parsePub(self: *Parser) !void {
     };
 }
 
+fn parseBlock(self: *Parser) Error!void {
+    try self.expect(.CurlyLeft);
+    try self.pushNode(.{ .kind = .Scope, .children = 0 });
+    const scope_index = self.lastPushedIndex();
+
+    var children: u32 = 0;
+    while (!self.isAtEnd() and self.peek().kind != .CurlyRight) : (children += 1) {
+        self.parseStatement() catch {
+            self.synchronize();
+            continue;
+        };
+    }
+    try self.expect(.CurlyRight);
+
+    self.file.ast.items[scope_index].children = children;
+}
+
 fn parseReturn(self: *Parser) !void {
     const return_index = self.index();
     try self.expect(.Return);
@@ -277,54 +281,64 @@ fn parseReturn(self: *Parser) !void {
     try self.expect(.SemiColon);
 }
 
-fn parseExpressionStatement(self: *Parser) !void {
-    const id = try self.expectOneOf(.{ .Identifier, .At });
-    if (id.kind == .Identifier) {
-        try self.pushNode(.{ .kind = .ExpressionStatement, .children = 1 });
-        self.file.current -= 1;
-        try self.checkEofNext();
-        const token_next = self.peekNext();
-        switch (token_next.kind) {
-            .ParenLeft => {
-                const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-                try self.file.ast.appendSlice(self.allocator, expression);
-            },
-            .Equals, .PlusEquals, .MinusEquals, .StarEquals, .SlashEquals, .PercentEquals => {
-                try self.pushNode(.{ .kind = .Mutation, .children = 3 });
-                try self.pushNode(.{ .kind = .Identifier, .children = 0, .token_index = self.file.current });
-                self.advance();
-                const kind: Node.Kind = switch (token_next.kind) {
-                    .Equals => .Equals,
-                    .PlusEquals => .PlusEquals,
-                    .MinusEquals => .MinusEquals,
-                    .StarEquals => .StarEquals,
-                    .SlashEquals => .SlashEquals,
-                    .PercentEquals => .PercentEquals,
-                    else => unreachable,
-                };
-                try self.pushNode(.{ .kind = kind, .children = 0 });
-                self.advance();
-                try self.parseExpression();
-            },
-            else => {
-                self.advance();
-                return self.reportError("Unexpected token {any} in parseExpressionStatement\n", .{token_next.kind});
-            },
-        }
-    } else {
-        self.file.current -= 1;
-        const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-        try self.file.ast.appendSlice(self.allocator, expression);
-    }
-
-    try self.expect(.SemiColon);
-}
-
 fn parseUnderscore(self: *Parser) !void {
     try self.expect(.Underscore);
     try self.pushNode(.{ .kind = .IgnoreResult, .children = 1 });
     try self.expect(.Equals);
     try self.parseExpression();
+    try self.expect(.SemiColon);
+}
+
+fn parseExpressionStatement(self: *Parser) !void {
+    const id = try self.expectOneOf(.{ .Identifier, .At });
+    switch (id.kind) {
+        .Identifier => {
+            try self.pushNode(.{ .kind = .ExpressionStatement, .children = 1 });
+            self.file.current -= 1;
+            try self.checkEofNext();
+            const token_next = self.peekNext();
+            switch (token_next.kind) {
+                .ParenLeft => {
+                    const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+                    try self.pushNodes(expression);
+                },
+                .Equals, .PlusEquals, .MinusEquals, .StarEquals, .SlashEquals, .PercentEquals => {
+                    try self.pushNode(.{ .kind = .Mutation, .children = 3 });
+                    try self.pushNode(makeLeaf(.Identifier, self.index()));
+                    self.advance();
+                    const kind: Node.Kind = switch (token_next.kind) {
+                        .Equals => .Equals,
+                        .PlusEquals => .PlusEquals,
+                        .MinusEquals => .MinusEquals,
+                        .StarEquals => .StarEquals,
+                        .SlashEquals => .SlashEquals,
+                        .PercentEquals => .PercentEquals,
+                        else => unreachable,
+                    };
+                    try self.pushNode(makeLeaf(kind, null));
+                    self.advance();
+                    try self.parseExpression();
+                },
+                else => {
+                    self.advance();
+                    return self.reportError("Unexpected token {any} in parseExpressionStatement\n", .{token_next.kind});
+                },
+            }
+        },
+        .At => {
+            try self.pushNode(.{ .kind = .Builtin, .children = 2 });
+
+            const identifier_index = self.index();
+            try self.expect(.Identifier);
+            try self.pushNode(makeLeaf(.Identifier, identifier_index));
+
+            try self.expect(.ParenLeft);
+            try self.pushNodes(try self.parseArguments());
+            try self.expect(.ParenRight);
+        },
+        else => unreachable,
+    }
+
     try self.expect(.SemiColon);
 }
 
@@ -352,25 +366,12 @@ fn parsePrefix(self: *Parser) Error![]Node {
     const token_index = self.advanceGetIndex();
     switch (token.kind) {
         .Identifier, .IntDecimalLiteral, .IntBinaryLiteral, .IntOctalLiteral, .IntHexadecimalLiteral, .IntScientificLiteral, .FloatLiteral, .FloatScientificLiteral, .BoolLiteral => {
-            const kind: Node.Kind = switch (token.kind) {
-                .Identifier => .Identifier,
-                .IntDecimalLiteral => .IntDecimalLiteral,
-                .IntBinaryLiteral => .IntBinaryLiteral,
-                .IntOctalLiteral => .IntOctalLiteral,
-                .IntHexadecimalLiteral => .IntHexadecimalLiteral,
-                .IntScientificLiteral => .IntScientificLiteral,
-                .FloatLiteral => .FloatLiteral,
-                .FloatScientificLiteral => .FloatScientificLiteral,
-                .BoolLiteral => .BoolLiteral,
-                else => unreachable,
-            };
-            return self.nodesToHeapSlice(.{makeLeaf(kind, token_index)});
+            return self.nodesToHeapSlice(makeLeaf(Node.Kind.fromTokenKind(token.kind), token_index));
         },
         .Minus, .Not => {
             const kind: Node.Kind = switch (token.kind) {
                 .Minus => .UnaryMinus,
-                .Not => .UnaryNot,
-                else => unreachable,
+                else => Node.Kind.fromTokenKind(token.kind),
             };
             const node = Node{ .kind = kind, .children = 1, .token_index = token_index };
             const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Prefix);
@@ -408,21 +409,8 @@ fn parseInfixOrSuffix(self: *Parser, left: []Node) ![]Node {
     switch (token.kind) {
         .Plus, .Minus, .Star, .Slash, .Percent, .DoubleEquals, .BangEquals, .GraterThan, .GraterEqualsThan, .LesserThan, .LesserEqualsThan, .And, .Or, .Xor => {
             const kind: Node.Kind = switch (token.kind) {
-                .Plus => .BinaryPlus,
                 .Minus => .BinaryMinus,
-                .Star => .BinaryStar,
-                .Slash => .BinarySlash,
-                .Percent => .BinaryPercent,
-                .DoubleEquals => .BinaryDoubleEquals,
-                .BangEquals => .BinaryBangEquals,
-                .GraterThan => .BinaryGraterThan,
-                .GraterEqualsThan => .BinaryGraterEqualsThan,
-                .LesserThan => .BinaryLesserThan,
-                .LesserEqualsThan => .BinaryLesserEqualsThan,
-                .And => .BinaryAnd,
-                .Or => .BinaryOr,
-                .Xor => .BinaryXor,
-                else => unreachable,
+                else => Node.Kind.fromTokenKind(token.kind),
             };
             const operator = Node{ .kind = kind, .children = 2, .token_index = token_index };
             const expression = try self.parseExpressionWithPrecedence(token.precedence());
@@ -450,6 +438,7 @@ fn parseArguments(self: *Parser) ![]Node {
         try arguments.append(self.allocator, .{ .kind = .Expression, .children = 1 });
         const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
         try arguments.appendSlice(self.allocator, expression);
+        // TODO: enforce all comas except the last one
         if (self.peek().kind == .Comma) {
             self.advance();
         }

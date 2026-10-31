@@ -38,12 +38,12 @@ FUNCTION_DECLARATION = 'fn'
                      , IDENTIFIER
                      , BLOCK ;
 
-STATEMENT = BLOCK
+STATEMENT = VAR_DECLARATION
           | CONST_DECLARATION
-          | VAR_DECLARATION
+          | BLOCK
           | RETURN
-          | EXPRESSION_STATEMENT
-          | UNDERSCORE_STATEMENT ;
+          | UNDERSCORE_STATEMENT
+          | EXPRESSION_STATEMENT ;
 
 BLOCK = '{'
       , { STATEMENT }
@@ -53,16 +53,16 @@ RETURN = 'return'
        , [ EXPRESSION ]
        , END_OF_STATEMENT ;
 
-EXPRESSION_STATEMENT = ( ( IDENTIFIER
-                         , modify_operator
-                         , EXPRESSION )
-                       | FUNCTION_CALL
-                       | BUILTIN_CALL )
-                     , END_OF_STATEMENT ;
-
 UNDERSCORE_STATEMENT = '_'
                      , '='
                      , EXPRESSION
+                     , END_OF_STATEMENT ;
+
+EXPRESSION_STATEMENT = ( ( IDENTIFIER
+                         , modify_operator
+                         , EXPRESSION )
+                       | function_call
+                       | BUILTIN_CALL )
                      , END_OF_STATEMENT ;
 
 END_OF_STATEMENT = ';' ;
@@ -71,29 +71,33 @@ TYPE_EXPRESSION = TYPE_IDENTIFIER
                 | IDENTIFIER
                 | BUILTIN_CALL ;
 
-EXPRESSION = ( INTEGER_LITERAL
-             | FLOAT_LITERAL
-             | BOOL_LITERAL
-             | IDENTIFIER
-             | FUNCTION_CALL
-             | BUILTIN_CALL )
-           | ( '('
-             , EXPRESSION
-             , ')' )
-           | ( EXPRESSION
-             , binary_operator
-             , EXPRESSION )
-           | ( unary_operator
-             , EXPRESSION ) ;
+EXPRESSION = prefix_expression
+           | infix_or_suffix_expression ;
 
-FUNCTION_CALL = IDENTIFIER
+prefix_expression = INTEGER_LITERAL
+                  | FLOAT_LITERAL
+                  | BOOL_LITERAL
+                  | IDENTIFIER
+                  | ( unary_operator
+                    , EXPRESSION )
+                  | ( '('
+                    , EXPRESSION
+                    , ')' )
+                  | BUILTIN_CALL ;
+
+infix_or_suffix_expression = ( EXPRESSION
+                             , binary_operator
+                             , EXPRESSION )
+                           | function_call ;
+
+function_call = IDENTIFIER
               , '('
               , { EXPRESSION
                 , [ ',' ] }
               , ')' ;
 
 BUILTIN_CALL = '@'
-             , FUNCTION_CALL ;
+             , function_call ;
 
 modify_operator = '='
                 | '+='

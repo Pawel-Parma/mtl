@@ -68,6 +68,38 @@ pub const Kind = enum {
     Scope,
 
     Builtin,
+
+    pub fn fromTokenKind(kind: Token.Kind) Kind {
+        return switch (kind) {
+            .Identifier => .Identifier,
+            .IntDecimalLiteral => .IntDecimalLiteral,
+            .IntBinaryLiteral => .IntBinaryLiteral,
+            .IntOctalLiteral => .IntOctalLiteral,
+            .IntHexadecimalLiteral => .IntHexadecimalLiteral,
+            .IntScientificLiteral => .IntScientificLiteral,
+            .FloatLiteral => .FloatLiteral,
+            .FloatScientificLiteral => .FloatScientificLiteral,
+            .BoolLiteral => .BoolLiteral,
+
+            .Not => .UnaryNot,
+
+            .Plus => .BinaryPlus,
+            .Star => .BinaryStar,
+            .Slash => .BinarySlash,
+            .Percent => .BinaryPercent,
+            .DoubleEquals => .BinaryDoubleEquals,
+            .BangEquals => .BinaryBangEquals,
+            .GraterThan => .BinaryGraterThan,
+            .GraterEqualsThan => .BinaryGraterEqualsThan,
+            .LesserThan => .BinaryLesserThan,
+            .LesserEqualsThan => .BinaryLesserEqualsThan,
+            .And => .BinaryAnd,
+            .Or => .BinaryOr,
+            .Xor => .BinaryXor,
+
+            else => unreachable,
+        };
+    }
 };
 
 pub inline fn token(self: *const Node, file: *File) ?Token {

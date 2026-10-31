@@ -43,6 +43,10 @@ pub fn nextToken(self: *Tokenizer) Token {
     };
 }
 
+inline fn index(self: *Tokenizer) u32 {
+    return self.file.position;
+}
+
 inline fn advance(self: *Tokenizer) void {
     self.file.position += 1;
 }
@@ -108,7 +112,7 @@ inline fn isHexadecimalDigitChar(char: u8) bool {
 fn charToken(self: *Tokenizer) Token {
     const kind = Token.getCorrespondingKind(self.peek());
     const start = self.advanceGetIndex();
-    return .{ .kind = kind, .start = start, .end = self.file.position };
+    return .{ .kind = kind, .start = start, .end = self.index() };
 }
 
 fn charEqualsToken(self: *Tokenizer) Token {
@@ -117,40 +121,40 @@ fn charEqualsToken(self: *Tokenizer) Token {
     if (!self.isAtEnd() and self.peek() == '=') {
         const kind = Token.getCorrespondingKindEquals(char);
         self.advance();
-        return .{ .kind = kind, .start = start, .end = self.file.position };
+        return .{ .kind = kind, .start = start, .end = self.index() };
     }
     const kind = Token.getCorrespondingKind(char);
-    return .{ .kind = kind, .start = start, .end = self.file.position };
+    return .{ .kind = kind, .start = start, .end = self.index() };
 }
 
 fn escapeSequenceToken(self: *Tokenizer) Token {
     const start = self.advanceGetIndex();
-    return .{ .kind = .EscapeSequence, .start = start, .end = self.file.position };
+    return .{ .kind = .EscapeSequence, .start = start, .end = self.index() };
 }
 
 fn identifierToken(self: *Tokenizer) Token {
-    const start = self.file.position;
+    const start = self.index();
     while (!self.isAtEnd() and isIdentifierChar(self.peek())) {
         self.advance();
     }
-    const word = self.file.buffer[start..self.file.position];
+    const word = self.file.buffer[start..self.index()];
     const kind = Token.keywords.get(word) orelse .Identifier;
-    return .{ .kind = kind, .start = start, .end = self.file.position };
+    return .{ .kind = kind, .start = start, .end = self.index() };
 }
 
 fn underscoreToken(self: *Tokenizer) Token {
     if (self.isNextAtEnd() or !isIdentifierChar(self.peekNext())) {
         const start = self.advanceGetIndex();
-        return .{ .kind = .Underscore, .start = start, .end = self.file.position };
+        return .{ .kind = .Underscore, .start = start, .end = self.index() };
     }
     return self.identifierToken();
 }
 
 fn newLineToken(self: *Tokenizer) Token {
     self.file.line_number += 1;
-    self.file.line_start = self.file.position + 1;
+    self.file.line_start = self.index() + 1;
     const start = self.advanceGetIndex();
-    return .{ .kind = .Newline, .start = start, .end = self.file.position };
+    return .{ .kind = .Newline, .start = start, .end = self.index() };
 }
 
 fn slashToken(self: *Tokenizer) Token {
@@ -172,7 +176,7 @@ fn slashToken(self: *Tokenizer) Token {
             else => {},
         }
     }
-    return .{ .kind = kind, .start = start, .end = self.file.position };
+    return .{ .kind = kind, .start = start, .end = self.index() };
 }
 
 fn numberLiteralToken(self: *Tokenizer) Token {
@@ -187,7 +191,7 @@ fn numberLiteralToken(self: *Tokenizer) Token {
             else => null,
         };
         if (kind_opt) |kind| {
-            return .{ .kind = kind, .start = start, .end = self.file.position };
+            return .{ .kind = kind, .start = start, .end = self.index() };
         }
     }
 
@@ -230,7 +234,7 @@ fn numberLiteralToken(self: *Tokenizer) Token {
         true => if (has_minus or has_dot) .FloatScientificLiteral else .IntScientificLiteral,
     };
 
-    return .{ .kind = kind, .start = start, .end = self.file.position };
+    return .{ .kind = kind, .start = start, .end = self.index() };
 }
 
 fn isValidDigit(char: u8, comptime kind: Token.Kind) bool {
@@ -279,7 +283,6 @@ fn advanceToEndOfNumber(self: *Tokenizer, comptime kind: Token.Kind) Token.Kind 
 }
 
 fn invalidByte(self: *Tokenizer) Token {
-    const start = self.file.position;
-    self.advance();
-    return .{ .kind = .InvalidByte, .start = start, .end = self.file.position };
+    const start = self.advanceGetIndex();
+    return .{ .kind = .InvalidByte, .start = start, .end = self.index() };
 }
