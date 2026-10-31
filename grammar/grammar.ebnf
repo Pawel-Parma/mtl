@@ -32,7 +32,7 @@ FUNCTION_DECLARATION = 'fn'
                      , '('
                      , { IDENTIFIER
                        , ':'
-                       , IDENTIFIER
+                       , IDENTIFIER (* TODO: make , optional only at the end *)
                        , [ ',' ] }
                      , ')'
                      , IDENTIFIER
@@ -67,10 +67,16 @@ EXPRESSION_STATEMENT = ( ( IDENTIFIER
 
 END_OF_STATEMENT = ';' ;
 
+COMMENT = '//'
+        , { comment_char } ;
+
+comment_char = ? any character except newline ? ;
+
 TYPE_EXPRESSION = TYPE_IDENTIFIER
                 | IDENTIFIER
                 | BUILTIN_CALL ;
 
+(* TODO: add precedence, meaby convert to peg *)
 EXPRESSION = prefix_expression
            | infix_or_suffix_expression ;
 
@@ -78,26 +84,35 @@ prefix_expression = INTEGER_LITERAL
                   | FLOAT_LITERAL
                   | BOOL_LITERAL
                   | IDENTIFIER
-                  | ( unary_operator
-                    , EXPRESSION )
-                  | ( '('
-                    , EXPRESSION
-                    , ')' )
+                  | unary_expression
+                  | grouping_expression
                   | BUILTIN_CALL ;
 
-infix_or_suffix_expression = ( EXPRESSION
-                             , binary_operator
-                             , EXPRESSION )
-                           | function_call ;
+unary_expression = unary_operator
+                 , EXPRESSION ;
 
-function_call = IDENTIFIER
-              , '('
-              , { EXPRESSION
-                , [ ',' ] }
-              , ')' ;
+grouping_expression = '('
+                    , EXPRESSION
+                    , ')' ;
 
 BUILTIN_CALL = '@'
              , function_call ;
+
+infix_or_suffix_expression = binary_expression
+                           | function_call ;
+
+binary_expression = EXPRESSION
+                  , binary_operator
+                  , EXPRESSION ;
+
+function_call = IDENTIFIER
+              , '('
+              , { EXPRESSION (* TODO: make , optional only at the end *)
+                , [ ',' ] }
+              , ')' ;
+
+unary_operator = '-'
+               | 'not' ;
 
 modify_operator = '='
                 | '+='
@@ -120,9 +135,6 @@ binary_operator = '+'
                 | '>='
                 | '<'
                 | '<=' ;
-
-unary_operator = '-'
-               | 'not' ;
 
 TYPE_IDENTIFIER = 'i8'
                 | 'i16'
@@ -217,6 +229,7 @@ float_normal = integer_b10_normal
              , '.'
              , integer_b10_normal ;
 
+(* TODO: rn can be parsed both as float and int exponent, but ['-'] is mandatory to be float if there is no '.' *)
 float_exponent = integer_b10_normal
                , '.'
                , integer_b10_normal

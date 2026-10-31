@@ -1,0 +1,41 @@
+{
+    "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+    "grammars": [
+        {
+            "name": "mtl",
+            "camelcase": "Mtl",
+            "title": "Mtl",
+            "scope": "source.mtl",
+            "file-types": [
+                "mtl"
+            ],
+            "injection-regex": "^mtl$",
+            "class-name": "TreeSitterMtl"
+        }
+    ],
+    "metadata": {
+        "version": "0.0.0",
+        "license": "AGPL3.0",
+        "description": "Mtl grammar for tree-sitter",
+        "authors": [
+            {
+                "name": "",
+                "url": ""
+            }
+        ],
+        "links": {
+            "repository": "",
+            "funding": ""
+        }
+    },
+    "bindings": {
+        "c": true,
+        "go": false,
+        "java": false,
+        "node": false,
+        "python": false,
+        "rust": false,
+        "swift": false,
+        "zig": false
+    }
+}
