@@ -1,5 +1,5 @@
-/// ! <reference types="tree-sitter-cli/dsl" />
-// ! @ts-check
+///  <reference types="tree-sitter-cli/dsl" />
+//  @ts-check
 
 export default grammar({
     name: 'mtl',
@@ -52,17 +52,19 @@ export default grammar({
             'fn',
             $.identifier,
             '(',
-            repeat(seq(
-                $.identifier,
-                ':',
-                $.expression,
-                // TODO: make , optional only at the end 
-                optional(',')
-            )),
+            optional($.parameter_list),
             ')',
             $.expression,
             $.block
         ),
+
+        parameter_list: $ => seq(
+            $.parameter,
+            repeat(seq(',', $.parameter)),
+            optional(","),
+        ),
+
+        parameter: $ => seq($.identifier, ':', $.expression),
 
         statement: $ => choice(
             $.var_declaration,
@@ -150,10 +152,16 @@ export default grammar({
         function_call: $ => prec(7, seq(
             $.identifier,
             '(',
-            // TODO: make, optional only at the end 
-            repeat(seq($.expression, optional(','))),
+            optional($.argument_list),
             ')'
         )),
+
+        argument_list: $ => seq(
+            $.argument,
+            repeat(seq(',', $.argument)),
+            optional(',')),
+
+        argument: $ => $.expression,
 
         unary_operator: _ => choice('-', 'not'),
         modify_operator: _ => choice('=', '+=', '-=', '*=', '/=', '%='),
@@ -189,7 +197,14 @@ export default grammar({
         ),
 
         float_normal: _ => token(/[0-9]+(_[0-9]+)*\.[0-9]+(_[0-9]+)*/),
-        float_exponent: _ => token(/[0-9]+(_[0-9]+)*(\.[0-9]+)?(_[0-9]+)*[eE](-)?[0-9]+(_[0-9]+)*/),
+
+        float_exponent: $ => choice(
+            $.float_exponent_float,
+            $.float_exponent_inverse,
+        ),
+
+        float_exponent_float: _ => token(/[0-9]+(_[0-9]+)*\.[0-9]+?(_[0-9]+)*[eE](-)?[0-9]+(_[0-9]+)*/),
+        float_exponent_inverse: _ => token(/[0-9]+(_[0-9]+)*[eE]-[0-9]+(_[0-9]+)*/),
     }
 });
 

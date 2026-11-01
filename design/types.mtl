@@ -17,7 +17,7 @@
 
 // optional type is represented as `?type_name`
 
-TODO:
+TODO
     arrays
     slices
     strings as slices of u8

@@ -26,7 +26,7 @@ pub fn parse(self: *Parser) Error!void {
     try self.file.ensureAstCapacity();
     while (!self.isAtEnd()) {
         self.parseTopLevelStatement() catch {
-            self.synchronize();
+            self.synchronizeTopLevel();
         };
     }
     if (!self.file.success) {
@@ -70,6 +70,7 @@ inline fn advanceGetIndex(self: *Parser) u32 {
     return self.file.current - 1;
 }
 
+// TODO: consider peek checking isAtEnd and returning EOF token instead of calling it before every time
 inline fn peek(self: *Parser) Token {
     return self.file.tokens.items[self.file.current];
 }
@@ -109,9 +110,12 @@ fn expectOneOf(self: *Parser, comptime kinds: anytype) !Token {
     }
 
     if (kinds.len == 1) {
-        return self.reportError("Expected token kind to be {any}, found {any}\n", .{ kinds[0], token.kind });
+        if (kinds[0] == .SemiColon) {
+            return self.reportMissingSemiColon("Expected {any}\n", .{kinds[0]});
+        }
+        return self.reportError("Expected {any}, found {any}\n", .{ kinds[0], token.kind });
     } else {
-        return self.reportError("Expected token kind to be one of {any}, found {any}\n", .{ kinds, token.kind });
+        return self.reportError("Expected {any}, found {any}\n", .{ kinds, token.kind });
     }
 }
 
@@ -119,12 +123,31 @@ inline fn expect(self: *Parser, comptime kind: Token.Kind) !void {
     _ = try self.expectOneOf(.{kind});
 }
 
-fn synchronize(self: *Parser) void {
-    while (!self.isAtEnd() and self.peek().kind != .SemiColon and self.peek().kind != .CurlyRight) {
+fn synchronizeTopLevel(self: *Parser) void {
+    var curly_balance: i32 = 0;
+    while (!self.isAtEnd()) {
+        const token = self.peek();
+        switch (token.kind) {
+            .Const, .Var => if (curly_balance == 0) {
+                break;
+            },
+            .Fn, .Pub => break,
+            .CurlyLeft => curly_balance += 1,
+            .CurlyRight => curly_balance -= 1,
+            else => {},
+        }
         self.advance();
     }
-    if (!self.isAtEnd()) {
+}
+
+fn synchronize(self: *Parser) void {
+    while (!self.isAtEnd()) {
+        const token = self.peek();
         self.advance();
+        switch (token.kind) {
+            .SemiColon, .CurlyRight => break,
+            else => {},
+        }
     }
 }
 
@@ -159,12 +182,25 @@ fn nodesToHeapSlice(self: *Parser, nodes: anytype) ![]Node {
     return slice.items;
 }
 
-fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) Error {
+fn reportErrorOffsetToken(self: *Parser, comptime fmt: []const u8, args: anytype, comptime offset_token: bool) Error {
     self.file.success = false;
     const len: u32 = @intCast(self.file.buffer.len);
-    const token = if (self.isAtEnd()) Token{ .kind = .Eof, .start = len - 1, .end = len } else self.peek();
+    var token = if (self.isAtEnd()) Token{ .kind = .Eof, .start = len - 1, .end = len } else self.peek();
+    if (offset_token) {
+        token.start += @intCast(token.len());
+    }
     self.printer.printSourceLine(fmt, args, self.file, token);
     return Error.ParsingFailed;
+}
+
+fn reportError(self: *Parser, comptime fmt: []const u8, args: anytype) Error {
+    return self.reportErrorOffsetToken(fmt, args, false);
+}
+
+fn reportMissingSemiColon(self: *Parser, comptime fmt: []const u8, args: anytype) Error {
+    self.file.current -= 1;
+    const err = self.reportErrorOffsetToken(fmt, args, true);
+    return err;
 }
 
 fn parseDeclaration(self: *Parser) !void {
@@ -221,26 +257,38 @@ fn parseParameters(self: *Parser) !void {
     const parameters_index = self.lastPushedIndex();
 
     var children: u32 = 0;
-    while (!self.isAtEnd() and self.peek().kind != .ParenRight) : (children += 1) {
-        try self.pushNode(.{ .kind = .Parameter, .children = 2 });
-
-        const parameter_identifier_index = self.index();
-        try self.expect(.Identifier);
-        try self.pushNode(makeLeaf(.Identifier, parameter_identifier_index));
-        try self.expect(.Colon);
-
-        const type_index = self.index();
-        // TODO: change to expression
-        try self.expect(.Identifier);
-        try self.pushNode(makeLeaf(.Identifier, type_index));
-
-        // TODO: enforce all comas except the last one
-        if (self.peek().kind == .Comma) {
-            self.advance();
+    if (!self.isAtEnd() and self.peek().kind != .ParenRight) {
+        try self.parseParameter();
+        children += 1;
+    }
+    while (!self.isAtEnd() and self.peek().kind == .Comma) {
+        self.advance();
+        if (!self.isAtEnd() and self.peek().kind == .ParenRight) {
+            break;
         }
+        try self.parseParameter();
+        children += 1;
+    }
+
+    if (!self.isAtEnd() and self.peek().kind == .Comma) {
+        self.advance();
     }
 
     self.file.ast.items[parameters_index].children = children;
+}
+
+fn parseParameter(self: *Parser) !void {
+    try self.pushNode(.{ .kind = .Parameter, .children = 2 });
+
+    const parameter_identifier_index = self.index();
+    try self.expect(.Identifier);
+    try self.pushNode(makeLeaf(.Identifier, parameter_identifier_index));
+    try self.expect(.Colon);
+
+    const type_index = self.index();
+    // TODO: change to expression
+    try self.expect(.Identifier);
+    try self.pushNode(makeLeaf(.Identifier, type_index));
 }
 
 fn parsePub(self: *Parser) !void {
@@ -435,17 +483,32 @@ fn parseInfixOrSuffix(self: *Parser, left: []Node) ![]Node {
 fn parseArguments(self: *Parser) ![]Node {
     var arguments: std.ArrayList(Node) = .empty;
     try arguments.append(self.allocator, .{ .kind = .Arguments, .children = 0 });
+
     var children: u32 = 0;
-    while (!self.isAtEnd() and self.peek().kind != .ParenRight) : (children += 1) {
-        try arguments.append(self.allocator, .{ .kind = .Argument, .children = 1 });
-        try arguments.append(self.allocator, .{ .kind = .Expression, .children = 1 });
-        const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
-        try arguments.appendSlice(self.allocator, expression);
-        // TODO: enforce all comas except the last one
-        if (self.peek().kind == .Comma) {
-            self.advance();
-        }
+    if (!self.isAtEnd() and self.peek().kind != .ParenRight) {
+        try self.parseArgument(&arguments);
+        children += 1;
     }
+    while (!self.isAtEnd() and self.peek().kind == .Comma) {
+        self.advance();
+        if (!self.isAtEnd() and self.peek().kind == .ParenRight) {
+            break;
+        }
+        try self.parseArgument(&arguments);
+        children += 1;
+    }
+
+    if (!self.isAtEnd() and self.peek().kind == .Comma) {
+        self.advance();
+    }
+
     arguments.items[0].children = children;
     return arguments.items;
+}
+
+fn parseArgument(self: *Parser, arguments: *std.ArrayList(Node)) !void {
+    try arguments.append(self.allocator, .{ .kind = .Argument, .children = 1 });
+    try arguments.append(self.allocator, .{ .kind = .Expression, .children = 1 });
+    const expression = try self.parseExpressionWithPrecedence(Token.Precedence.Lowest);
+    try arguments.appendSlice(self.allocator, expression);
 }

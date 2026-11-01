@@ -3,6 +3,7 @@
 ; TODO: delete and make user defined types be highlighed via lsp
 (const_declaration
   (identifier) @type.definition
+  "="
   (expression
     (prefix_expression
       (type_identifier))))
@@ -51,9 +52,9 @@
   (identifier) @function)
 
 (function_declaration
-  "("
-  (identifier) @variable.parameter
-  ":")
+  (parameter_list
+    (parameter
+      (identifier) @variable.parameter)))
 
 (function_call
   (identifier) @function.call)

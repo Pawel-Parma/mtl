@@ -66,3 +66,8 @@ fn add(a: u8, b: u8) u8 {
 }
 ```
 
+## TODO:
+ - Add tests to tokenizer and parser
+ - Resolve TODOs in grammar and parser
+ - Refactor semantic
+     

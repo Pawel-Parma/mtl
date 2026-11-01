@@ -1,3 +1,35 @@
 {
-    "type": "module"
+    "name": "tree-sitter-mtl",
+    "version": "0.0.0",
+    "description": "Mtl grammar for tree-sitter",
+    "type": "module",
+    "repository": {
+        "type": "git",
+        "url": ""
+    },
+    "funding": "",
+    "license": "AGPL3.0",
+    "author": {
+        "name": "p",
+        "url": ""
+    },
+    "files": [
+        "grammar.js",
+        "tree-sitter.json",
+        "queries/*",
+        "src/**"
+    ],
+    "devDependencies": {
+        "tree-sitter": "^0.25.0",
+        "tree-sitter-cli": "^0.26.7"
+    },
+    "peerDependencies": {
+        "tree-sitter": "^0.25.0"
+    },
+    "peerDependenciesMeta": {
+        "tree-sitter": {
+            "optional": true
+        }
+    },
+    "scripts": {}
 }

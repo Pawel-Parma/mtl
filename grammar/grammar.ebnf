@@ -30,13 +30,19 @@ CONST_DECLARATION = 'const'
 FUNCTION_DECLARATION = 'fn'
                      , IDENTIFIER
                      , '('
-                     , { IDENTIFIER
-                       , ':'
-                       , EXPRESSION (* TODO: make , optional only at the end *)
-                       , [ ',' ] }
+                     , [ parameter_list ]
                      , ')'
                      , EXPRESSION
                      , BLOCK ;
+
+parameter_list = parameter
+               , { ','
+                 , parameter }
+               , [ ',' ] ;
+
+parameter = IDENTIFIER
+          , ':'
+          , EXPRESSION ;
 
 STATEMENT = VAR_DECLARATION
           | CONST_DECLARATION
@@ -104,9 +110,15 @@ binary_expression = EXPRESSION
 
 function_call = IDENTIFIER
               , '('
-              , { EXPRESSION (* TODO: make , optional only at the end *)
-                , [ ',' ] }
+              , [ argument_list ]
               , ')' ;
+
+argument_list = argument
+              , { ','
+                , argument }
+              , [ ',' ] ;
+
+argument = EXPRESSION ;
 
 unary_operator = '-'
                | 'not' ;
@@ -226,11 +238,17 @@ float_normal = integer_b10_normal
              , '.'
              , integer_b10_normal ;
 
-(* TODO: rn can be parsed both as float and int exponent, but ['-'] is mandatory to be float if there is no '.' *)
-float_exponent = integer_b10_normal
-               , '.'
-               , integer_b10_normal
-               , [ '-' ]
-               , ( 'e'
-                 | 'E' )
-               , integer_b10_normal ;
+float_exponent = float_exponent_float
+               | float_exponent_inverse ;
+
+float_exponent_float = float_normal
+                     , ( 'e'
+                       | 'E' )
+                     , [ '-' ]
+                     , integer_b10_normal ;
+
+float_exponent_inverse = integer_b10_normal
+                       , ( 'e'
+                         | 'E' )
+                       , '-'
+                       , integer_b10_normal ;

@@ -1,9 +1,9 @@
 Todo:
     make global scope lazily analyzed
-    // TODO: global const cannot depend on var
+    // TODO global const cannot depend on var
     // const G0 = G1 + 1;
     // var   G1 := 5;                       
-    // TODO: add cycle analysis, cycle cross type boundry or type only boundry or expre boundry
+    // TODO add cycle analysis, cycle cross type boundry or type only boundry or expre boundry
     // const i = j + 1 const j = i + 1;  
     // // ------- 3-way indirect cycle with expressions -------
     // const I0 = I1 + 1;
@@ -17,7 +17,7 @@ Todo:
     // const Z1: Z2 = 123;
     // const Z2 = Z0;                       // ERROR: cycle (Z0 → Z1 → Z2 → Z0)
     add builtin functions (print)
-    // TODO: make types expressions so @typeof is allowed 
+    // TODO make types expressions so @typeof is allowed 
     add tests
     make diff scopes to allow redeclare
     add function and function_generic to all when completed

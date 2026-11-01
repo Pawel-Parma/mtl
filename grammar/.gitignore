@@ -1,3 +1,8 @@
+# Node artifacts
+build/
+prebuilds/
+node_modules/
+
 # C artifacts
 *.a
 *.so
@@ -7,6 +12,9 @@
 *.pc
 *.exp
 *.lib
+
+# Example dirs
+/examples/*/
 
 # Grammar volatiles
 *.wasm
@@ -18,3 +26,4 @@
 *.tgz
 *.zip
 *.jar
+
